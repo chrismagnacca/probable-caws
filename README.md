@@ -172,9 +172,13 @@ screenshots for each attempt.
    control flow.
 3. **Black-box evaluation.** The Evaluator only ever drives the running app through its UI/HTTP
    surface, the same way a real user would — never by reading the source it's grading.
-4. **Two git repos, cleanly separated.** Repo #1 (this workspace) is the audit trail of what the
-   harness and agents did; repo #2 (`app/`) is just the product code, rollback-able independently
-   without touching the record of how it got there.
+4. **Two git repos, cleanly separated.** Repo #1 (this workspace) holds the harness itself; during
+   a run the orchestrator also commits a per-attempt snapshot of `state/` (verdicts, feedback,
+   decisions, screenshots) into it, so its history records how each feature's evidence evolved.
+   Repo #2 (`app/`, ignored by repo #1 and created by `bootstrap.sh`) holds only the product code,
+   checkpoint-tagged `good/F###` so it can be rolled back independently without touching that
+   record. Run logs (`logs/`) belong to neither repo — they're deliberately untracked plain files,
+   so transcripts and event streams survive any git rollback untouched.
 5. **Observability is a first-class feature.** Every session, cost, verdict, and screenshot is
    recorded as it happens, in formats meant to be tailed, diffed, and replayed — not just logged
    for debugging.
