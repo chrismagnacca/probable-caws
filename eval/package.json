@@ -1,0 +1,10 @@
+{
+  "name": "probable-caws-eval",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Evaluator-side black-box browser probing helpers for the harness.",
+  "dependencies": {
+    "playwright": "1.49.1"
+  }
+}

@@ -1,0 +1,26 @@
+# Runtime logs, transcripts, and session artifacts (never committed; the
+# post-mortem record lives here and must survive git rollbacks untouched)
+logs/*
+!logs/.gitkeep
+
+# Local agent scratch memory
+.claude/agent-memory/
+
+# The generated application is its own git repo (checkpoint tags good/F###) — the root
+# repo tracks the harness and state history, never the app tree itself
+app/*
+!app/.gitkeep
+
+# Dependency trees and throwaway evaluator scripts
+eval/node_modules/
+eval/tmp/
+
+# Atomic-write staging and process bookkeeping
+state/.tmp/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

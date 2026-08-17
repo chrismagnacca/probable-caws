@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(python3 *)",
+      "Bash(pip *)",
+      "Bash(pip3 *)",
+      "Bash(curl http://127.0.0.1*)",
+      "Bash(curl http://localhost*)"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(sudo*)",
+      "Bash(rm -rf /*)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(**/.env.production)",
+      "WebFetch"
+    ]
+  }
+}

@@ -1,0 +1,1537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>probable caws · cockpit</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Cpath%20fill%3D'%234593ec'%20fill-rule%3D'evenodd'%20d%3D'M61%2025%20L46%2020%20C43%2013.5%2034%2012%2029%2016.5%20C26%2019.5%2024%2023%2020%2027%20C16.5%2030.5%2010%2037%204%2046%20L1%2053%20L7%2050.5%20C12%2045.5%2017%2042.5%2022%2043%20C24%2046%2025.5%2049.5%2026%2052.5%20L25%2059.5%20L28%2059.5%20L29%2053.2%20C31%2053.2%2033%2053%2035%2052.5%20L34.5%2059.5%20L37.5%2059.5%20L38.5%2051.5%20C43%2048.5%2046%2043%2047%2037.5%20C48%2032.5%2050%2029.5%2052.5%2028.5%20Z%20M42%2022%20a2.5%202.5%200%201%201%20-.1%20.01%20Z'%2F%3E%3C%2Fsvg%3E">
+<style>
+  :root{
+    /* surfaces (raven stack, cool blue-black cast) */
+    --bg:#0a0c12; --surface-0:#0d1017; --surface-1:#12151d; --surface-2:#1a1f2b;
+    --overlay:rgba(4,6,10,.62); --lightbox:rgba(4,6,10,.88);
+    /* borders */
+    --border-subtle:#1b2130; --border:#242c3c; --border-strong:#33405a;
+    --edge-highlight:rgba(255,255,255,.04);
+    /* ink — text never wears mark colors; --text-3 is de-emphasis ONLY, never load-bearing */
+    --text:#e3e9f2; --text-2:#9aa7ba; --text-3:#66718a;
+    /* status marks (validated set), text steps (all >=4.5:1 on surface-1), washes */
+    --ok:#14a578; --danger:#c73832; --warn:#bd8a1f; --info:#4593ec; --hold:#7e50cc;
+    --ok-text:#2fbd8b; --danger-text:#e2564e; --warn-text:#d9a83f; --info-text:#6aa6f5; --hold-text:#9d86e8;
+    --ok-wash:rgba(20,165,120,.13); --danger-wash:rgba(199,56,50,.13); --warn-wash:rgba(189,138,31,.13);
+    --info-wash:rgba(69,147,236,.11); --hold-wash:rgba(126,80,204,.13); --neutral-wash:rgba(154,167,186,.10);
+    /* interactive accent (blue = live/active) */
+    --accent:#4593ec; --accent-hover:#6aa6f5; --focus-ring:0 0 0 2px rgba(69,147,236,.55);
+    /* crow sheen (brand chrome ONLY, never data) */
+    --sheen-a:#6aa6f5; --sheen-b:#9d86e8; --sheen:linear-gradient(115deg,var(--sheen-a),var(--sheen-b));
+    /* run track */
+    --lane-a:#0d1017; --lane-b:#10141d; --band-zebra:rgba(255,255,255,.02); --band-active:rgba(69,147,236,.05);
+    --block:#2b3446; --block-hover:#38445c; --block-live:var(--info);
+    --block-text:var(--text); --block-text-on-live:#0a0c12; --cursor:var(--accent);
+    /* --spark(=--accent): intentional exception — the single-series cost sparkline wears the page-wide
+       live/interactive blue; no building semantics, no legend; a second series must move both off status hues */
+    --spark:var(--accent);
+    /* typography */
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --fs-caps:10px; --fs-xs:11px; --fs-sm:12px; --fs-base:13px; --fs-stat:15px; --fs-hero:20px;
+    /* geometry (4/8px rhythm) · elevation · motion */
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --r-1:4px; --r-2:8px; --r-3:12px;
+    --shadow-1:0 1px 2px rgba(0,0,0,.45); --shadow-2:0 8px 24px rgba(0,0,0,.5); --shadow-3:-16px 0 48px rgba(0,0,0,.55);
+    --ease:cubic-bezier(.2,0,0,1); --dur-1:120ms; --dur-2:200ms;
+    --pulse:pulse 2s var(--ease) infinite;
+  }
+  *{box-sizing:border-box; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.14) transparent;}
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14); border-radius:4px;}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.22);}
+  ::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent;}
+  ::selection{background:rgba(69,147,236,.32);}
+  html,body{height:100%;}
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--font); font-size:var(--fs-base); line-height:1.4; }
+  a{color:var(--accent);}
+  a:hover{color:var(--accent-hover);}
+  button{ font-family:var(--font); font-size:var(--fs-sm); font-weight:500; background:var(--surface-2); color:var(--text-2); border:1px solid var(--border); border-radius:var(--r-1); padding:4px 10px; cursor:pointer; transition:color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
+  button:hover{border-color:var(--border-strong); color:var(--text);}
+  button.active{background:var(--info-wash); border-color:var(--accent); color:var(--info-text);}
+  :focus-visible{box-shadow:var(--focus-ring); outline:none;}
+  .mono{font-family:var(--mono);}
+  .dim{color:var(--text-2);}
+  .hidden{display:none !important;}
+  .pill{ display:inline-flex; align-items:center; gap:6px; height:20px; padding:2px 10px; border-radius:10px; font-size:var(--fs-xs); font-weight:600; letter-spacing:.03em; }
+  .pill::before{content:""; width:6px; height:6px; border-radius:50%; flex:0 0 auto;}
+  .pill.running{background:var(--ok-wash); color:var(--ok-text);}
+  .pill.running::before{background:var(--ok); animation:var(--pulse);}
+  .pill.ended{background:var(--neutral-wash); color:var(--text-2);}
+  .pill.ended::before{background:var(--text-3);}
+  .pill.waiting{background:var(--warn-wash); color:var(--warn-text);}
+  .pill.waiting::before{background:transparent; border:1px solid var(--warn-text);}
+  .chip{ display:inline-flex; align-items:center; height:18px; padding:1px 7px; border-radius:var(--r-1); font-size:10px; font-family:var(--mono); background:var(--surface-2); color:var(--text-2); border:1px solid var(--border); }
+  .seg-control{ display:inline-flex; gap:2px; background:var(--surface-0); border:1px solid var(--border); border-radius:var(--r-1); padding:2px; }
+  .seg-control button{background:transparent; border:none; border-radius:3px; padding:3px 10px; color:var(--text-3);}
+  .seg-control button:hover{color:var(--text);}
+  .seg-control button.active{background:var(--surface-2); color:var(--text); box-shadow:var(--shadow-1);}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.55;}}
+  @keyframes breathe{0%,100%{opacity:.5;}50%{opacity:.65;}}
+  @keyframes fx-in{from{transform:translateX(16px); opacity:0;}to{transform:none; opacity:1;}}
+  @keyframes fade-in{from{opacity:0;}to{opacity:1;}}
+
+  /* Vitals */
+  #vitals{ position:sticky; top:0; z-index:20; display:flex; align-items:center; height:64px; padding:0 var(--sp-4); background:var(--surface-1); box-shadow:inset 0 1px 0 var(--edge-highlight); }
+  #vitals::after{content:""; position:absolute; left:0; right:0; bottom:0; height:1px; background:var(--sheen);}
+  #brand{ display:flex; align-items:center; gap:var(--sp-2); flex:0 0 168px; width:168px; height:100%; border-right:1px solid var(--border-subtle); }
+  #crow-mark{color:var(--accent); flex:0 0 auto;}
+  #wordmark{font-size:var(--fs-base); font-weight:650; letter-spacing:.02em; color:var(--text); white-space:nowrap;}
+  .wm-caws{color:var(--text-2);}
+  @media (max-width:640px){ .wm-probable{display:none;} #brand{flex:0 0 auto; width:auto; padding-right:var(--sp-4);} }
+  #vitals .cell{display:flex; flex-direction:column; justify-content:center; gap:2px; height:100%; padding:0 20px;}
+  #vitals .cell + .cell{border-left:1px solid var(--border-subtle);}
+  #vitals .cell .label{font-size:var(--fs-caps); font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;}
+  #vitals .cell .value{font-size:var(--fs-base);}
+  #v-runid{font-size:var(--fs-xs); color:var(--text-3);}
+  #vitals #v-progress{min-width:220px;}
+  #v-segbar{display:flex; gap:2px; width:220px; height:10px; margin-top:3px;}
+  #v-segbar div{flex:1; min-width:3px; border-radius:2px; cursor:pointer; transition:filter var(--dur-1) var(--ease);}
+  #v-segbar div:first-child{border-top-left-radius:4px; border-bottom-left-radius:4px;}
+  #v-segbar div:last-child{border-top-right-radius:4px; border-bottom-right-radius:4px;}
+  #v-segbar div:hover{filter:brightness(1.15);}
+  #v-segbar div.todo{background:var(--surface-0); box-shadow:inset 0 0 0 1px var(--border-subtle);}
+  #v-segbar div.done{background:var(--ok);}
+  #v-segbar div.failed{background:var(--danger);}
+  #v-segbar div.blocked{background:var(--hold);}
+  #v-segbar div.building{background:var(--info); animation:var(--pulse);}
+  .cost-line{display:flex; align-items:center; gap:var(--sp-2);}
+  #v-cost-val{font-size:var(--fs-hero); font-weight:650; color:var(--text);}
+  #v-cost.warn #v-cost-val{color:var(--warn-text);}
+  #v-cost-warn{color:var(--warn-text); font-size:var(--fs-sm);}
+  .cost-note{font-size:var(--fs-caps); color:var(--text-3);}
+  #v-spark{overflow:visible;}
+  .spark-path{stroke:var(--spark); stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round;}
+  .spark-dot{fill:var(--spark); stroke:var(--surface-1); stroke-width:2;}
+  .spark-cap{stroke:rgba(189,138,31,.5); stroke-width:1;}
+  #v-budget-val{font-family:var(--mono); font-size:var(--fs-stat); font-weight:600; color:var(--text-2);}
+  .stale-line{display:flex; align-items:center; gap:6px;}
+  #v-stale-dot{width:8px; height:8px; border-radius:50%; background:transparent; flex:0 0 auto;}
+  #v-stale.fresh #v-stale-dot{background:var(--ok);}
+  #v-stale.fresh #v-stale-val{color:var(--text-2);}
+  #v-stale.warn #v-stale-dot{background:var(--warn-text);}
+  #v-stale.warn #v-stale-val{color:var(--warn-text);}
+  #v-stale.red #v-stale-dot{background:var(--danger-text);}
+  #v-stale.red #v-stale-val{color:var(--danger-text);}
+
+  /* Layout */
+  .layout{display:grid; grid-template-columns:1fr 320px; gap:var(--sp-4); padding:var(--sp-4); align-items:start;}
+  .main-col{display:flex; flex-direction:column; gap:var(--sp-4); min-width:0;}
+  .right-rail{min-width:0;}
+  .panel{ background:var(--surface-1); border:1px solid var(--border); border-radius:var(--r-2); overflow:hidden; box-shadow:var(--shadow-1), inset 0 1px 0 var(--edge-highlight); }
+  .panel-head{ display:flex; align-items:center; justify-content:space-between; height:36px; padding:0 var(--sp-3); border-bottom:1px solid var(--border-subtle); font-size:var(--fs-caps); font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); }
+  .panel-body{padding:var(--sp-3);}
+
+  /* Run track */
+  #run-track-svg{display:block; width:100%; height:240px; background:var(--surface-0);}
+  .rt-lane-a{fill:var(--lane-a);}
+  .rt-lane-b{fill:var(--lane-b);}
+  .rt-lane-label{font-family:var(--mono); font-size:10px; fill:var(--text-2);}
+  .rt-band-zebra{fill:var(--band-zebra);}
+  .rt-band-active{fill:var(--band-active);}
+  .rt-band-edge{stroke:var(--accent); stroke-width:1;}
+  .rt-band-label{font-family:var(--mono); font-size:10px; fill:var(--text-2);}
+  .rt-block{cursor:pointer;}
+  .rt-block-closed{fill:var(--block); transition:fill var(--dur-1) var(--ease);}
+  .rt-block:hover .rt-block-closed{fill:var(--block-hover);}
+  .rt-block-live{fill:var(--block-live); animation:var(--pulse);}
+  .rt-block-text{font-family:var(--mono); font-size:10px; fill:var(--block-text); pointer-events:none;}
+  .rt-block-text-live{font-family:var(--mono); font-size:10px; fill:var(--block-text-on-live); pointer-events:none;}
+  .rt-underline-pass{fill:var(--ok);}
+  .rt-underline-fail{fill:var(--danger);}
+  .rt-cursor line{stroke:var(--cursor); stroke-width:1;}
+  .rt-cursor polygon{fill:var(--cursor);}
+  .rt-ring-a{stroke:var(--lane-a); stroke-width:2;}
+  .rt-ring-b{stroke:var(--lane-b); stroke-width:2;}
+  .rt-marker-ok{fill:var(--ok);}
+  .rt-marker-fail-halo{fill:none; stroke-width:5; stroke-linecap:round;}
+  .rt-marker-fail{stroke:var(--danger); stroke-width:2; fill:none; stroke-linecap:round;}
+  .rt-marker-verdict-pass{fill:var(--ok);}
+  .rt-marker-verdict-fail{fill:var(--danger);}
+  .rt-marker-flag-ok{fill:var(--ok); opacity:.85;}
+  .rt-marker-flag-fail{fill:var(--danger);}
+  .rt-global line{stroke-width:1; opacity:.7;}
+  .rt-global-warn line{stroke:var(--warn);}
+  .rt-global-danger line{stroke:var(--danger);}
+  .rt-global text{font-family:var(--mono); font-size:10px;}
+  .rt-global-warn text{fill:var(--warn-text);}
+  .rt-global-danger text{fill:var(--danger-text);}
+
+  /* Right now */
+  #rn-head{display:flex; align-items:center; gap:10px; margin-bottom:var(--sp-2);}
+  #rn-liveness{width:8px; height:8px; border-radius:50%; background:var(--text-3); flex:0 0 auto;}
+  #rn-liveness.alive{background:var(--ok); box-shadow:0 0 0 3px rgba(20,165,120,.18); animation:var(--pulse);}
+  #rn-phase{font-size:var(--fs-sm); color:var(--text);}
+  #rn-elapsed{font-size:var(--fs-xs); color:var(--text-3);}
+  #rn-transcript{ height:240px; overflow-y:auto; background:var(--surface-0); border:1px solid var(--border-subtle); border-radius:var(--r-1); padding:8px 10px; font-family:var(--mono); font-size:11.5px; line-height:1.55; }
+  #rn-transcript .t-text{color:var(--text); margin:2px 0; white-space:pre-wrap; word-break:break-word;}
+  #rn-transcript .t-tool{ display:inline-flex; align-items:center; height:18px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r-1); padding:1px 7px; font-size:10px; color:var(--info-text); margin:2px 0; }
+  #rn-transcript .t-raw{color:var(--text-3); margin:2px 0; white-space:pre-wrap; word-break:break-word;}
+  #rn-footer{margin-top:var(--sp-2); display:flex; gap:14px;}
+  #rn-footer a{font-size:var(--fs-xs); color:var(--info-text); text-decoration:none;}
+  #rn-footer a:hover{text-decoration:underline;}
+  #rn-footer a::after{content:" ↗";}
+
+  /* Feature board */
+  #fb-list{max-height:640px; overflow-y:auto;}
+  .fb-row{ display:flex; align-items:center; gap:var(--sp-2); padding:8px 12px; border-bottom:1px solid var(--border-subtle); cursor:pointer; transition:background var(--dur-1) var(--ease); }
+  .fb-row:hover{background:var(--neutral-wash);}
+  .fb-row.building{background:var(--info-wash); box-shadow:inset 2px 0 0 var(--accent);}
+  .fb-badge{ width:16px; height:16px; border-radius:4px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; line-height:1; }
+  .fb-badge.done{background:var(--ok); color:#0a0c12;}
+  .fb-badge.failed{background:var(--danger); color:#fff;}
+  .fb-badge.building{background:var(--info); color:#0a0c12; animation:var(--pulse);}
+  .fb-badge.blocked{background:var(--hold); color:#fff;}
+  .fb-badge.todo{background:transparent; box-shadow:inset 0 0 0 1px var(--text-3);}
+  .fb-main{flex:1; min-width:0;}
+  .fb-title{font-size:var(--fs-sm); color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .fb-sub{font-size:10px; color:var(--text-3); display:flex; gap:6px; align-items:center; margin-top:2px;}
+  .fb-dep{color:var(--text-2);}
+  .fb-dots{display:flex; gap:3px;}
+  .fb-dot{width:7px; height:7px; border-radius:50%; box-shadow:inset 0 0 0 1px var(--border-strong);}
+  .fb-dot.pass{background:var(--ok); box-shadow:none;}
+  .fb-dot.fail{background:var(--danger); box-shadow:none;}
+  .fb-crit{display:flex; gap:2px;}
+  .fb-sq{width:7px; height:7px; border-radius:1.5px; background:var(--surface-2); box-shadow:inset 0 0 0 1px var(--border-subtle);}
+  .fb-sq.pass{background:var(--ok); box-shadow:none;}
+  .fb-sq.fail{background:var(--danger); box-shadow:none;}
+  .fb-cost{font-family:var(--mono); font-size:var(--fs-xs); color:var(--text-2); font-variant-numeric:tabular-nums; text-align:right;}
+  #fb-footer{padding:8px 12px; font-size:var(--fs-xs); color:var(--text-2); font-variant-numeric:tabular-nums;}
+  .fb-cdot{display:inline-block; width:6px; height:6px; border-radius:50%; vertical-align:middle; margin-right:2px;}
+  .fb-cdot.ok{background:var(--ok);}
+  .fb-cdot.danger{background:var(--danger);}
+  .fb-cdot.hold{background:var(--hold);}
+  .fb-cdot.todo{background:transparent; box-shadow:inset 0 0 0 1px var(--text-3);}
+
+  /* Forensics slide-over */
+  #forensics{ position:fixed; top:0; right:0; height:100%; width:62%; min-width:440px; max-width:900px; background:var(--surface-1); border-left:1px solid var(--border); border-radius:var(--r-3) 0 0 var(--r-3); z-index:40; overflow-y:auto; box-shadow:var(--shadow-3); animation:fx-in var(--dur-2) var(--ease); }
+  #forensics .fx-head{ position:sticky; top:0; z-index:1; background:rgba(18,21,29,.92); backdrop-filter:blur(8px); padding:14px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:flex-start; gap:var(--sp-3); }
+  .fx-title{font-size:var(--fs-stat); font-weight:600;}
+  .fx-status{display:flex; align-items:center; gap:var(--sp-2); margin-top:6px; font-size:var(--fs-sm); color:var(--text-2); flex-wrap:wrap;}
+  .fx-close{width:28px; height:28px; padding:0; display:flex; align-items:center; justify-content:center; flex:0 0 auto;}
+  #forensics .fx-body{padding:14px 16px; display:flex; flex-direction:column; gap:14px;}
+  .fx-crit-table{width:100%; border-collapse:collapse; font-size:var(--fs-sm);}
+  .fx-crit-table th{ font-size:var(--fs-caps); font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); text-align:left; padding:5px 6px; border-bottom:1px solid var(--border-subtle); }
+  .fx-crit-table td{border-bottom:1px solid var(--border-subtle); padding:5px 6px; text-align:left; font-variant-numeric:tabular-nums;}
+  .vchip{display:inline-flex; align-items:center; height:18px; padding:1px 7px; border-radius:var(--r-1); font-size:10px; font-family:var(--mono); border:1px solid transparent;}
+  .vchip.pass{background:var(--ok-wash); color:var(--ok-text);}
+  .vchip.fail{background:var(--danger-wash); color:var(--danger-text);}
+  .vchip.pending{background:var(--neutral-wash); color:var(--text-2);}
+  .fx-prose{white-space:pre-wrap; background:var(--surface-0); border:1px solid var(--border-subtle); border-radius:var(--r-2); padding:var(--sp-3); font-size:var(--fs-sm);}
+  .fx-bug{margin-bottom:10px;}
+  .fx-bug:last-child{margin-bottom:0;}
+  .fx-sev{font-family:var(--mono); font-size:var(--fs-xs); margin-right:4px;}
+  .sev-high{color:var(--danger-text);}
+  .sev-med{color:var(--warn-text);}
+  .sev-low{color:var(--text-2);}
+  .fx-repro{color:var(--text-2); margin-top:2px;}
+  .fx-shots{display:flex; gap:var(--sp-2); flex-wrap:wrap;}
+  .fx-shots img{ width:120px; height:80px; object-fit:cover; border:1px solid var(--border); border-radius:var(--r-1); cursor:zoom-in; transition:border-color var(--dur-1) var(--ease); }
+  .fx-shots img:hover{border-color:var(--accent);}
+  .fx-links{font-size:var(--fs-xs);}
+  .fx-links a{color:var(--info-text); text-decoration:none;}
+  .fx-links a:hover{text-decoration:underline;}
+  #overlay-backdrop{position:fixed; inset:0; background:var(--overlay); z-index:35; animation:fade-in var(--dur-2) var(--ease);}
+  #lightbox{position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; background:var(--lightbox); animation:fade-in var(--dur-2) var(--ease);}
+  #lightbox img{max-width:90%; max-height:90%; border-radius:var(--r-2); box-shadow:var(--shadow-2);}
+
+  /* Event drawer */
+  #event-drawer{border-top:1px solid var(--border); background:var(--surface-1);}
+  #ed-head{display:flex; align-items:center; justify-content:space-between; height:36px; padding:0 14px; cursor:pointer;}
+  .ed-title{font-size:var(--fs-caps); font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); display:flex; align-items:center; gap:6px;}
+  #ed-chevron{display:inline-block; font-size:10px; transition:transform var(--dur-1) var(--ease);}
+  #ed-chevron.open{transform:rotate(90deg);}
+  #ed-count{font-size:var(--fs-xs); color:var(--text-3); font-variant-numeric:tabular-nums;}
+  #ed-filters{display:flex; gap:10px; align-items:center; padding:0 14px 8px; flex-wrap:wrap;}
+  #ed-filters input[type=text]{ background:var(--surface-0); border:1px solid var(--border); color:var(--text); border-radius:var(--r-1); padding:4px 8px; font-size:var(--fs-xs); font-family:var(--mono); transition:border-color var(--dur-1) var(--ease); }
+  #ed-filters input[type=text]::placeholder{color:var(--text-3);}
+  #ed-filters input[type=text]:focus{border-color:var(--accent); box-shadow:var(--focus-ring); outline:none;}
+  #ed-filters label{font-size:var(--fs-xs); color:var(--text-2);}
+  #ed-filters input[type=checkbox]{accent-color:var(--accent);}
+  #ed-body{max-height:280px; overflow-y:auto; font-family:var(--mono); font-size:var(--fs-xs);}
+  .ed-row{ display:flex; gap:var(--sp-2); align-items:center; padding:3px 14px; border-bottom:1px solid var(--border-subtle); cursor:pointer; transition:background var(--dur-1) var(--ease); }
+  .ed-row:hover{background:var(--neutral-wash);}
+  .ed-row .ed-ev{width:130px; flex:0 0 auto; border-radius:3px;}
+  .ed-ev.ev-danger{color:var(--danger-text);}
+  .ed-ev.ev-ok{color:var(--ok-text);}
+  .ed-ev.ev-warn{color:var(--warn-text);}
+  .ed-ev.ev-info{color:var(--info-text);}
+  .ed-row .ed-ts{width:76px; flex:0 0 auto; color:var(--text-3); font-variant-numeric:tabular-nums;}
+  .ed-row .ed-role{width:70px; flex:0 0 auto; color:var(--text-2);}
+  .ed-row .ed-feat{width:60px; flex:0 0 auto; color:var(--text-2);}
+  .ed-row .ed-data{flex:1; color:var(--text-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .ed-pretty{margin:4px 14px 8px; padding:8px; white-space:pre-wrap; color:var(--text-2); background:var(--surface-0); border-radius:var(--r-1);}
+
+  /* Tooltip singleton */
+  #tooltip{ position:fixed; z-index:60; background:var(--surface-2); border:1px solid var(--border); border-radius:6px; box-shadow:var(--shadow-2); padding:6px 9px; max-width:280px; font-size:var(--fs-xs); pointer-events:none; animation:fade-in var(--dur-1) var(--ease); }
+  .tip-head{display:flex; align-items:center; gap:6px; font-weight:600; color:var(--text);}
+  .tip-swatch{width:8px; height:8px; border-radius:2px; flex:0 0 auto;}
+  .tip-swatch.done,.tip-swatch.pass{background:var(--ok);}
+  .tip-swatch.failed,.tip-swatch.fail{background:var(--danger);}
+  .tip-swatch.building{background:var(--info);}
+  .tip-swatch.blocked{background:var(--hold);}
+  .tip-swatch.todo,.tip-swatch.pending{background:var(--surface-0); box-shadow:inset 0 0 0 1px var(--border-subtle);}
+  .tip-line{color:var(--text-2); margin-top:2px; font-family:var(--mono);}
+
+  /* Empty state */
+  #empty-state{ display:flex; flex-direction:column; align-items:center; justify-content:center; height:70vh; gap:var(--sp-4); text-align:center; padding:20px; }
+  #crow-empty{color:var(--text-3); opacity:.5; animation:breathe 3s var(--ease) infinite;}
+  .es-text{font-size:var(--fs-stat); color:var(--text-2);}
+  .es-path{ background:var(--surface-1); border:1px solid var(--border); border-radius:var(--r-1); font-size:var(--fs-xs); color:var(--text-3); padding:4px 10px; }
+
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition-duration:0ms !important;} }
+</style>
+</head>
+<body>
+
+<div id="empty-state">
+  <svg id="crow-empty" width="88" height="88" viewBox="0 0 64 64" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M61 25 L46 20 C43 13.5 34 12 29 16.5 C26 19.5 24 23 20 27 C16.5 30.5 10 37 4 46 L1 53 L7 50.5 C12 45.5 17 42.5 22 43 C24 46 25.5 49.5 26 52.5 L25 59.5 L28 59.5 L29 53.2 C31 53.2 33 53 35 52.5 L34.5 59.5 L37.5 59.5 L38.5 51.5 C43 48.5 46 43 47 37.5 C48 32.5 50 29.5 52.5 28.5 Z M42 22 a2.5 2.5 0 1 1 -.1 .01 Z"/></svg>
+  <div class="es-text">waiting for a run to start</div>
+  <div class="es-path mono" id="empty-root"></div>
+</div>
+
+<div id="app" class="hidden">
+  <header id="vitals">
+    <div id="brand">
+      <svg id="crow-mark" width="24" height="24" viewBox="0 0 64 64" fill="currentColor" role="img" aria-label="probable caws"><path fill-rule="evenodd" d="M61 25 L46 20 C43 13.5 34 12 29 16.5 C26 19.5 24 23 20 27 C16.5 30.5 10 37 4 46 L1 53 L7 50.5 C12 45.5 17 42.5 22 43 C24 46 25.5 49.5 26 52.5 L25 59.5 L28 59.5 L29 53.2 C31 53.2 33 53 35 52.5 L34.5 59.5 L37.5 59.5 L38.5 51.5 C43 48.5 46 43 47 37.5 C48 32.5 50 29.5 52.5 28.5 Z M42 22 a2.5 2.5 0 1 1 -.1 .01 Z"/></svg>
+      <span id="wordmark"><span class="wm-probable">probable </span><span class="wm-caws">caws</span></span>
+    </div>
+    <div class="cell" id="v-run">
+      <div class="label">run</div>
+      <div class="value"><span id="v-pill" class="pill waiting">WAITING</span> <span id="v-runid" class="mono"></span></div>
+    </div>
+    <div class="cell" id="v-progress">
+      <div class="label">position</div>
+      <div class="value" id="v-position">—</div>
+      <div id="v-segbar"></div>
+    </div>
+    <div class="cell" id="v-cost">
+      <div class="label">cost</div>
+      <div class="cost-line"><span id="v-cost-val">$0.00</span><span id="v-cost-warn" class="hidden">⚠</span><svg id="v-spark" width="120" height="24"></svg></div>
+      <div class="cost-note">through last completed session</div>
+    </div>
+    <div class="cell" id="v-budget">
+      <div class="label">budget cap</div>
+      <div class="value" id="v-budget-val">—</div>
+    </div>
+    <div class="cell" id="v-stale">
+      <div class="label">freshness</div>
+      <div class="value stale-line"><span id="v-stale-dot"></span><span id="v-stale-val">—</span></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="main-col">
+      <div class="panel">
+        <div class="panel-head">
+          <span>Run Track</span>
+          <span class="seg-control">
+            <button id="zoom-full" class="active">full run</button>
+            <button id="zoom-hour">last hour</button>
+          </span>
+        </div>
+        <svg id="run-track-svg" viewBox="0 0 1600 240" preserveAspectRatio="none"></svg>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">Right Now</div>
+        <div class="panel-body">
+          <div id="rn-head">
+            <div id="rn-liveness"></div>
+            <div id="rn-phase" class="mono">idle</div>
+            <div id="rn-elapsed" class="mono"></div>
+          </div>
+          <div id="rn-transcript"><div class="t-raw dim">Perched — waiting for the first event.</div></div>
+          <div id="rn-footer">
+            <a id="rn-prompt-link" class="hidden" target="_blank" href="#">open full prompt</a>
+            <a id="rn-transcript-link" class="hidden" target="_blank" href="#">open full transcript</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="right-rail">
+      <div class="panel">
+        <div class="panel-head">Feature Board</div>
+        <div id="fb-list"></div>
+        <div id="fb-footer">0 done · 0 failed · 0 blocked · 0 todo</div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="event-drawer">
+    <div id="ed-head">
+      <span class="ed-title"><span id="ed-chevron">▸</span> Event Tail</span>
+      <span id="ed-count">0 events</span>
+    </div>
+    <div id="ed-filters" class="hidden">
+      <input type="text" id="ed-filter-feature" placeholder="filter feature id (F003)">
+      <label><input type="checkbox" id="ed-follow" checked> follow tail</label>
+    </div>
+    <div id="ed-body" class="hidden"></div>
+  </div>
+</div>
+
+<div id="forensics" class="hidden"></div>
+<div id="overlay-backdrop" class="hidden"></div>
+<div id="lightbox" class="hidden"></div>
+
+<script>
+(function(){
+"use strict";
+
+const SVGNS = "http://www.w3.org/2000/svg";
+const LANES = ["planner","generator","checks","evaluator","git"];
+const LANE_H = 36, LANE_GAP = 4, TOP_PAD = 20, LEFT_PAD = 56, RIGHT_PAD = 10;
+const SVG_H = TOP_PAD*2 + LANES.length*(LANE_H+LANE_GAP); // 240, matches CSS height
+let SVG_W = 1600; // recomputed from clientWidth on every rebuild so 1 unit == 1 CSS px
+const BADGE_GLYPH = { done:"✓", failed:"✕", building:"▶", blocked:"⧗", todo:"" };
+const MARKER_LABELS = { "tick-ok":"pass", "tick-fail":"fail", "diamond":"verdict", "flag-ok":"checkpoint", "flag-fail":"rollback" };
+const PHASE_LABELS = {
+  doctor_ok:"doctor checks passed…", feature_selected:"selecting feature…",
+  contract_compiled:"compiling contract…", precheck_pass:"precheck passed…",
+  precheck_fail:"precheck failed…", app_boot_ok:"app booted…", app_boot_failed:"booting app…",
+  eval_verdict:"verdict recorded…", feature_done:"feature done…", feature_failed:"feature failed…",
+  feature_blocked:"feature blocked…", escalation:"escalation raised…",
+  git_checkpoint:"committing checkpoint…", git_rollback:"rolling back…",
+  budget_warn:"budget warning…", stop_condition_met:"stopping…", run_end:"run ended.",
+  warning:"warning…", error:"error…"
+};
+
+function $(sel, root){ return (root||document).querySelector(sel); }
+function ce(tag, attrs, ...kids){
+  const el = document.createElement(tag);
+  if (attrs) for (const k in attrs){
+    if (k === "text") el.textContent = attrs[k];
+    else if (k === "html") el.innerHTML = attrs[k];
+    else el.setAttribute(k, attrs[k]);
+  }
+  for (const k of kids) if (k != null) el.appendChild(typeof k === "string" ? document.createTextNode(k) : k);
+  return el;
+}
+function svg(tag, attrs){
+  const el = document.createElementNS(SVGNS, tag);
+  if (attrs) for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fmtMoney(n){ return "$" + (Number(n)||0).toFixed(2); }
+function fmtTok(n){
+  n = Number(n)||0;
+  if (n >= 1e6) return (n/1e6).toFixed(1) + "M tok";
+  if (n >= 1e3) return (n/1e3).toFixed(1) + "K tok";
+  return n + " tok";
+}
+function parseTs(s){ const t = Date.parse(s); return isNaN(t) ? Date.now() : t; }
+function fmtElapsed(sourceMs){
+  let ms = Math.max(0, Date.now() - sourceMs);
+  const s = Math.floor(ms/1000);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  if (h) return `${h}h${m}m`;
+  if (m) return `${m}m${sec}s`;
+  return `${sec}s`;
+}
+function fetchJSON(url){
+  return fetch(url).then(r => r.ok ? r.json() : Promise.reject(new Error("http "+r.status)));
+}
+function fetchText(url){
+  return fetch(url).then(r => r.ok ? r.text().then(t => ({text:t, headers:r.headers})) : Promise.reject(new Error("http "+r.status)));
+}
+function eventClass(ev){
+  ev = String(ev||"");
+  if (/fail|error|rollback|stop/.test(ev)) return "ev-danger";
+  if (/_ok$|pass|done|checkpoint/.test(ev)) return "ev-ok";
+  if (/warn|escalation|blocked/.test(ev)) return "ev-warn";
+  if (/^session_|^run_|^state/.test(ev)) return "ev-info";
+  return "";
+}
+
+// ---------------------------------------------------------------------
+// Shared tooltip singleton (replaces title= / <title> on data elements)
+// ---------------------------------------------------------------------
+
+const TIP = ce("div", {id:"tooltip", class:"hidden"});
+let tipTarget = null;
+function setTipContent(text, status){
+  TIP.innerHTML = "";
+  const lines = String(text||"").split("\n");
+  const head = ce("div", {class:"tip-head"});
+  if (status) head.appendChild(ce("span", {class:"tip-swatch " + status}));
+  head.appendChild(ce("span", {text: lines[0]}));
+  TIP.appendChild(head);
+  for (let i=1;i<lines.length;i++) if (lines[i]) TIP.appendChild(ce("div", {class:"tip-line", text:lines[i]}));
+}
+function positionTip(e){
+  const pad = 12;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  const r = TIP.getBoundingClientRect();
+  if (x + r.width > window.innerWidth - 4) x = e.clientX - r.width - pad;
+  if (y + r.height > window.innerHeight - 4) y = e.clientY - r.height - pad;
+  TIP.style.left = x + "px"; TIP.style.top = y + "px";
+}
+function hideTip(){ tipTarget = null; TIP.classList.add("hidden"); }
+function initTooltip(){
+  document.body.appendChild(TIP);
+  document.addEventListener("mouseover", e => {
+    const t = (e.target && e.target.closest) ? e.target.closest("[data-tip]") : null;
+    if (t === tipTarget) return;
+    tipTarget = t;
+    if (!t){ TIP.classList.add("hidden"); return; }
+    setTipContent(t.getAttribute("data-tip"), t.getAttribute("data-tip-status"));
+    TIP.classList.remove("hidden");
+    positionTip(e);
+  });
+  document.addEventListener("mousemove", e => {
+    if (!tipTarget) return;
+    if (!document.contains(tipTarget)){ hideTip(); return; }
+    positionTip(e);
+  });
+  document.addEventListener("mouseout", e => {
+    if (tipTarget && !(e.relatedTarget && tipTarget.contains(e.relatedTarget))) hideTip();
+  });
+}
+
+// ---------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------
+
+const STATE = {
+  es: null,
+  offsets: { events: 0, ledger: 0 },
+  root: "",
+  run: null,
+  features: [],
+  featuresById: {},
+  sessions: {},
+  sessionOrder: [],
+  liveSessionId: null,
+  liveSessionDir: null,
+  eventLog: [],
+  ledgerRows: [],
+  lastEventTs: null,
+  bands: [],
+  markersList: [],
+  globalLines: [],
+  verdicts: {}, // "F003:2" -> "pass"|"fail" (drives block underlines across rebuilds)
+  budgetWarned: false,
+  maxAttempts: 3,
+  trackMode: "full",
+  trackDomain: null,
+  trackEls: {}, // session_id -> {rect, group, label, underline, laneY}
+  cursorEl: null,
+  transcriptOffset: 0,
+  transcriptDir: null,
+  transcriptTimer: null,
+  transcriptSamples: [],
+  transcriptLines: [], // {kind:'text'|'tool'|'raw', text}
+  userScrolledBoard: false,
+  forensicsFid: null,
+  forensicsAttempt: null,
+  replaying: true,   // true during the initial event-log replay burst; settled by quiescence
+  pendingPoll: null, // transcript-poll args deferred until replay settles
+};
+
+function resetAll(){
+  STATE.run = null;
+  STATE.features = []; STATE.featuresById = {};
+  STATE.sessions = {}; STATE.sessionOrder = [];
+  STATE.liveSessionId = null; STATE.liveSessionDir = null;
+  STATE.eventLog = [];
+  STATE.ledgerRows = [];
+  STATE.lastEventTs = null;
+  STATE.bands = []; STATE.markersList = [];
+  STATE.globalLines = []; STATE.verdicts = {};
+  STATE.budgetWarned = false;
+  STATE.maxAttempts = 3;
+  STATE.trackMode = "full"; STATE.trackDomain = null; STATE.trackEls = {};
+  stopTranscriptPolling();
+  STATE.transcriptLines = [];
+  const evDrawer = $("#ed-body"); if (evDrawer) evDrawer.innerHTML = "";
+  const rt = $("#run-track-svg"); if (rt) rt.innerHTML = "";
+  $("#zoom-full").classList.add("active"); $("#zoom-hour").classList.remove("active");
+}
+
+// ---------------------------------------------------------------------
+// SSE client
+// ---------------------------------------------------------------------
+
+function trackOffsetsFromId(id){
+  if (!id) return;
+  const m = /^e:(\d+);l:(\d+)$/.exec(id);
+  if (m){ STATE.offsets.events = parseInt(m[1],10); STATE.offsets.ledger = parseInt(m[2],10); }
+}
+
+function connectStream(eventsOff, ledgerOff){
+  if (STATE.es){ try{ STATE.es.close(); }catch(e){} }
+  const es = new EventSource(`/api/stream?events=${eventsOff||0}&ledger=${ledgerOff||0}`);
+  STATE.es = es;
+  es.addEventListener("events", e => { trackOffsetsFromId(e.lastEventId); onEventsLine(e.data); });
+  es.addEventListener("ledger", e => { trackOffsetsFromId(e.lastEventId); onLedgerLine(e.data); });
+  es.addEventListener("state", e => { trackOffsetsFromId(e.lastEventId); onStateSnapshot(e.data); });
+  es.addEventListener("reset", e => { trackOffsetsFromId(e.lastEventId); onReset(); });
+  es.onerror = () => {
+    try{ es.close(); }catch(err){}
+    setTimeout(() => connectStream(STATE.offsets.events, STATE.offsets.ledger), 1000);
+  };
+}
+
+function onReset(){
+  resetAll();
+  showEmptyState();
+}
+
+// The one snapshot sent on SSE connect can be wiped by a run_start reset during replay,
+// and no new snapshot arrives until features.json's mtime changes — refetch instead of
+// leaving the Feature Board empty for the rest of a long session.
+let stateRefetchTimer = null;
+function scheduleStateRefetch(){
+  clearTimeout(stateRefetchTimer);
+  stateRefetchTimer = setTimeout(async () => {
+    try{
+      const r = await fetch("/api/state");
+      if (r.ok) onStateSnapshot(await r.text());
+    }catch(e){}
+  }, 300);
+}
+
+// Replay settles when no event line has arrived for 400ms; only then does transcript
+// polling begin (for the session that is actually live), instead of one fetch per
+// replayed session_start.
+let replaySettleTimer = null;
+function noteEventActivity(){
+  clearTimeout(replaySettleTimer);
+  replaySettleTimer = setTimeout(() => {
+    STATE.replaying = false;
+    if (STATE.pendingPoll){
+      startTranscriptPolling(...STATE.pendingPoll);
+      STATE.pendingPoll = null;
+    }
+  }, 400);
+}
+
+function onStateSnapshot(data){
+  let obj;
+  try{ obj = JSON.parse(data); }catch(e){ return; }
+  STATE.features = obj.features || [];
+  STATE.featuresById = {};
+  for (const f of STATE.features) STATE.featuresById[f.id] = f;
+  renderFeatureBoard();
+  renderVitalsProgress();
+  if (STATE.forensicsFid) renderForensicsBody();
+}
+
+function onLedgerLine(data){
+  let row;
+  try{ row = JSON.parse(data); }catch(e){ return; }
+  STATE.ledgerRows.push(row);
+  if (STATE.ledgerRows.length > 2000) STATE.ledgerRows.shift();
+  renderVitalsCost();
+}
+
+function onEventsLine(data){
+  noteEventActivity();
+  let row;
+  try{ row = JSON.parse(data); }catch(e){ return; }
+  STATE.eventLog.push(row);
+  if (STATE.eventLog.length > 500) STATE.eventLog.shift();
+  if (row.ts) STATE.lastEventTs = parseTs(row.ts);
+  appendEventDrawerRow(row);
+  dispatch(row);
+  renderRightNowPhase();
+}
+
+// ---------------------------------------------------------------------
+// Reducer
+// ---------------------------------------------------------------------
+
+function dispatch(row){
+  switch(row.event){
+    case "run_start": {
+      resetAll();
+      STATE.eventLog = [row];
+      const data = row.data || {};
+      STATE.run = {
+        run_id: row.run_id, started_at: row.ts, config: data.config || {},
+        claude_version: data.claude_version, auth_mode: data.auth_mode, prompt: data.prompt,
+        status: "running", stop_reason: null, human: null, done:0, failed:0, blocked:0
+      };
+      const cfg = STATE.run.config;
+      STATE.maxAttempts = (cfg.attempts && cfg.attempts.max_per_feature) || 3;
+      hideEmptyState();
+      initTrackDomain();
+      renderVitalsRun();
+      scheduleStateRefetch();
+      break;
+    }
+    case "session_start": {
+      const data = row.data || {};
+      const sess = {
+        session_id: row.session_id, role: row.role, feature_id: row.feature_id,
+        attempt: row.attempt, dir: data.session_dir, model: data.model,
+        start_ts: parseTs(row.ts), end_ts: null, exit_reason: null, cost_usd: null, wall_s: null
+      };
+      STATE.sessions[row.session_id] = sess;
+      STATE.sessionOrder.push(row.session_id);
+      STATE.liveSessionId = row.session_id;
+      STATE.liveSessionDir = data.session_dir;
+      updateBand(row.feature_id, sess.start_ts);
+      trackAddBlock(sess);
+      if (STATE.replaying){
+        STATE.pendingPoll = [data.session_dir, row.role, row.feature_id, row.attempt];
+      } else {
+        startTranscriptPolling(data.session_dir, row.role, row.feature_id, row.attempt);
+      }
+      break;
+    }
+    case "session_end": {
+      const sess = STATE.sessions[row.session_id];
+      const data = row.data || {};
+      if (sess){
+        sess.end_ts = parseTs(row.ts);
+        sess.exit_reason = data.exit_reason; sess.wall_s = data.wall_s; sess.cost_usd = data.cost_usd;
+        trackCloseBlock(sess);
+      }
+      if (STATE.liveSessionId === row.session_id){
+        STATE.liveSessionId = null; STATE.liveSessionDir = null;
+        STATE.pendingPoll = null;
+        stopTranscriptPolling();
+      }
+      break;
+    }
+    case "precheck_pass": trackAddMarker(row, "checks", "tick-ok"); break;
+    case "precheck_fail": trackAddMarker(row, "checks", "tick-fail"); break;
+    case "app_boot_ok": trackAddMarker(row, "checks", "tick-ok"); break;
+    case "app_boot_failed": trackAddMarker(row, "checks", "tick-fail"); break;
+    case "eval_verdict": {
+      const v = ((row.data && row.data.verdict) === "pass") ? "pass" : "fail";
+      if (row.feature_id) trackApplyVerdict(row.feature_id, row.attempt, v);
+      trackAddMarker(row, "evaluator", "diamond");
+      break;
+    }
+    case "git_checkpoint": trackAddMarker(row, "git", "flag-ok"); break;
+    case "git_rollback": trackAddMarker(row, "git", "flag-fail"); break;
+    case "budget_warn": STATE.budgetWarned = true; trackAddGlobalLine(row, "budget"); renderVitalsCost(); break;
+    case "stop_condition_met": trackAddGlobalLine(row, "stop"); break;
+    case "run_end": {
+      const data = row.data || {};
+      if (STATE.run){
+        STATE.run.status = "ended"; STATE.run.stop_reason = data.stop_reason; STATE.run.human = data.human;
+        STATE.run.done = data.done; STATE.run.failed = data.failed; STATE.run.blocked = data.blocked;
+      }
+      renderVitalsRun();
+      break;
+    }
+    default: break;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Vitals
+// ---------------------------------------------------------------------
+
+function renderVitalsRun(){
+  if (document.hidden) return;
+  const pill = $("#v-pill"), runid = $("#v-runid");
+  if (!STATE.run){ pill.textContent = "WAITING"; pill.className = "pill waiting"; pill.title = ""; runid.textContent = ""; return; }
+  if (STATE.run.status === "ended"){
+    pill.textContent = "ENDED"; pill.className = "pill ended";
+    // corvid microcopy: success only — failed/aborted runs stay literal
+    pill.title = STATE.run.stop_reason === "BACKLOG_DONE"
+      ? "Run complete. Nothing left to caw about."
+      : (STATE.run.human || STATE.run.stop_reason || "");
+  } else {
+    pill.textContent = "RUNNING"; pill.className = "pill running"; pill.title = "";
+  }
+  runid.textContent = STATE.run.run_id || "";
+  renderVitalsProgress();
+  renderVitalsBudget();
+}
+
+function renderVitalsProgress(){
+  if (document.hidden) return;
+  const posEl = $("#v-position");
+  posEl.innerHTML = "";
+  if (!STATE.run){ posEl.textContent = "—"; }
+  else if (STATE.run.status === "ended"){
+    posEl.textContent = STATE.run.human || `stopped: ${STATE.run.stop_reason||""}`;
+  } else if (STATE.liveSessionId && STATE.sessions[STATE.liveSessionId]){
+    const s = STATE.sessions[STATE.liveSessionId];
+    posEl.appendChild(ce("span", {class:"mono", text: s.feature_id||"—"}));
+    posEl.appendChild(document.createTextNode(` · ${s.role} · attempt ${s.attempt||"?"}/${STATE.maxAttempts}`));
+  } else {
+    posEl.textContent = "idle";
+  }
+  const bar = $("#v-segbar"); bar.innerHTML = "";
+  for (const f of STATE.features){
+    const seg = document.createElement("div");
+    const st = f.status || "todo";
+    seg.className = st;
+    seg.setAttribute("data-tip", `${f.id} — ${st}`);
+    seg.setAttribute("data-tip-status", st);
+    seg.addEventListener("click", () => openForensics(f.id));
+    bar.appendChild(seg);
+  }
+}
+
+function renderVitalsCost(){
+  if (document.hidden) return;
+  const last = STATE.ledgerRows[STATE.ledgerRows.length-1];
+  const cell = $("#v-cost");
+  $("#v-cost-val").textContent = fmtMoney(last ? last.cumulative_cost_usd : 0);
+  cell.classList.toggle("warn", STATE.budgetWarned);
+  $("#v-cost-warn").classList.toggle("hidden", !STATE.budgetWarned);
+  const svgEl = $("#v-spark"); svgEl.innerHTML = "";
+  const pts = STATE.ledgerRows.slice(-40);
+  if (pts.length < 2) return;
+  const costs = pts.map(p => p.cumulative_cost_usd||0);
+  const max = Math.max(...costs, 0.01);
+  const w = 120, h = 24, pad = 4;
+  const yFor = v => h - pad - (v/max)*(h - 2*pad);
+  let d = "";
+  pts.forEach((p,i) => {
+    const x = (i/(pts.length-1))*w;
+    d += (i===0?"M":"L") + x.toFixed(1) + "," + yFor(costs[i]).toFixed(1) + " ";
+  });
+  const budget = (STATE.run && STATE.run.config && STATE.run.config.budget) || {};
+  if (budget.max_usd && budget.max_usd <= max){
+    const cy = yFor(budget.max_usd);
+    svgEl.appendChild(svg("line", {x1:0, y1:cy.toFixed(1), x2:w, y2:cy.toFixed(1), class:"spark-cap"}));
+  }
+  svgEl.appendChild(svg("path", {d, class:"spark-path"}));
+  svgEl.appendChild(svg("circle", {cx:w, cy:yFor(costs[costs.length-1]).toFixed(1), r:3, class:"spark-dot"}));
+}
+
+function renderVitalsBudget(){
+  if (document.hidden || !STATE.run) return;
+  const cfg = STATE.run.config || {};
+  const budget = cfg.budget || {};
+  const val = STATE.run.auth_mode === "subscription" ? fmtTok(budget.max_tokens) : fmtMoney(budget.max_usd);
+  $("#v-budget-val").textContent = (budget.max_usd!=null || budget.max_tokens!=null) ? val : "—";
+}
+
+function renderVitalsStale(){
+  if (document.hidden) return;
+  const cell = $("#v-stale"), val = $("#v-stale-val");
+  cell.classList.remove("fresh","warn","red");
+  if (!STATE.run){ val.textContent = "—"; return; }
+  if (STATE.run.status === "ended"){ val.textContent = "run ended"; return; }
+  if (STATE.lastEventTs == null){ val.textContent = "no events yet"; return; }
+  const ageMs = Date.now() - STATE.lastEventTs;
+  const ageS = Math.round(ageMs/1000);
+  const ageM = Math.round(ageMs/60000);
+  if (ageMs < 120000){ cell.classList.add("fresh"); val.textContent = `live · ${ageS}s`; }
+  else if (ageMs < 600000){ cell.classList.add("warn"); val.textContent = `${ageM}m — long session?`; }
+  else { cell.classList.add("red"); val.textContent = `${ageM}m — possibly hung ⚠`; }
+}
+
+// ---------------------------------------------------------------------
+// Run Track (incremental inline SVG; neutral blocks + status accents)
+// ---------------------------------------------------------------------
+
+function laneIndex(role){
+  const i = LANES.indexOf(role);
+  return i === -1 ? 1 : i;
+}
+function laneY(i){ return TOP_PAD + i*(LANE_H+LANE_GAP); }
+function verdictKey(fid, attempt){ return (fid||"") + ":" + (attempt||0); }
+function fitLabel(text, w){ return w >= 40 && text.length*6 <= w-12; }
+
+function initTrackDomain(){
+  const startMs = parseTs(STATE.run.started_at);
+  const hrs = (STATE.run.config.run && STATE.run.config.run.max_wall_hours) || 8;
+  STATE.trackDomain = { start: startMs, end: startMs + hrs*3600*1000 };
+  rebuildTrackSvg();
+}
+
+function currentDomain(){
+  if (STATE.trackMode === "hour"){
+    const now = Date.now();
+    return { start: now - 3600*1000, end: now };
+  }
+  return STATE.trackDomain || { start: Date.now()-3600000, end: Date.now() };
+}
+
+function scaleX(ts){
+  const d = currentDomain();
+  const span = Math.max(1, d.end - d.start);
+  let frac = (ts - d.start) / span;
+  frac = Math.max(0, Math.min(1, frac));
+  return LEFT_PAD + frac * (SVG_W - LEFT_PAD - RIGHT_PAD);
+}
+
+function rebuildTrackSvg(){
+  const root = $("#run-track-svg");
+  SVG_W = Math.max(600, root.clientWidth || 0);
+  root.innerHTML = "";
+  root.setAttribute("viewBox", `0 0 ${SVG_W} ${SVG_H}`);
+  LANES.forEach((name,i) => {
+    const y = laneY(i);
+    root.appendChild(svg("rect", {x:LEFT_PAD, y, width:Math.max(0, SVG_W-LEFT_PAD), height:LANE_H, class: i%2===0 ? "rt-lane-a" : "rt-lane-b"}));
+    const t = svg("text", {x:8, y:y+LANE_H/2+3, class:"rt-lane-label"});
+    t.textContent = name;
+    root.appendChild(t);
+  });
+  // feature bands: two-tone zebra + active wash — identity, not per-feature hue
+  STATE.bands.forEach((b, idx) => {
+    const x0 = scaleX(b.start), x1 = scaleX(b.end || Date.now());
+    const f = STATE.featuresById[b.fid];
+    const active = !!(f && f.status === "building");
+    const cls = active ? "rt-band-active" : (idx % 2 === 0 ? "rt-band-zebra" : null);
+    if (cls) root.appendChild(svg("rect", {x:x0, y:0, width:Math.max(1, x1-x0), height:SVG_H, class:cls}));
+    if (active) root.appendChild(svg("line", {x1:x0, y1:0, x2:x0, y2:SVG_H, class:"rt-band-edge"}));
+    // a 4-char label needs ~34px; narrow bands stay unlabeled (hover the blocks instead)
+    if ((x1 - x0) >= 34){
+      const t = svg("text", {x:x0+4, y:13, class:"rt-band-label"});
+      t.textContent = b.fid;
+      root.appendChild(t);
+    }
+  });
+  for (const sid of STATE.sessionOrder){
+    trackDrawBlock(STATE.sessions[sid]);
+  }
+  for (const m of STATE.markersList) trackDrawMarker(m);
+  for (const gl of STATE.globalLines) trackDrawGlobalLine(gl);
+  const cg = svg("g", {class:"rt-cursor", transform:`translate(${scaleX(Date.now())},0)`});
+  cg.appendChild(svg("line", {x1:0, y1:0, x2:0, y2:SVG_H}));
+  cg.appendChild(svg("polygon", {points:"-5,0 5,0 0,5"}));
+  root.appendChild(cg);
+  STATE.cursorEl = cg;
+}
+
+function blockTip(sess){
+  const lines = [`${sess.feature_id||"—"} · ${sess.role} · attempt ${sess.attempt||"?"}/${STATE.maxAttempts}`];
+  if (sess.wall_s != null) lines.push(`duration ${sess.wall_s}s`);
+  else if (sess.end_ts) lines.push(`duration ${Math.round((sess.end_ts-sess.start_ts)/1000)}s`);
+  else lines.push("running");
+  lines.push(`cost ${sess.cost_usd != null ? fmtMoney(sess.cost_usd) : "—"}`);
+  if (sess.exit_reason) lines.push(`exit ${sess.exit_reason}`);
+  return lines.join("\n");
+}
+
+function ensureBlockLabel(els, sess, live){
+  if (els.label){
+    els.label.setAttribute("class", live ? "rt-block-text-live" : "rt-block-text");
+    return;
+  }
+  const ltext = `${sess.feature_id||""}·a${sess.attempt||""}`;
+  const w = parseFloat(els.rect.getAttribute("width")) || 0;
+  if (!fitLabel(ltext, w)) return;
+  const x0 = parseFloat(els.rect.getAttribute("x")) || 0;
+  els.label = svg("text", {x:x0+6, y:els.laneY+21, class: live ? "rt-block-text-live" : "rt-block-text"});
+  els.label.textContent = ltext;
+  els.group.appendChild(els.label);
+}
+
+function trackDrawBlock(sess){
+  if (!sess) return;
+  const root = $("#run-track-svg");
+  const i = laneIndex(sess.role);
+  const y = laneY(i);
+  const x0 = scaleX(sess.start_ts);
+  const x1 = scaleX(sess.end_ts || Date.now());
+  const w = Math.max(2, x1-x0);
+  const live = sess.end_ts == null;
+  const g = svg("g", {class:"rt-block", "data-tip": blockTip(sess)});
+  const rect = svg("rect", {x:x0, y:y+10, width:w, height:16, rx:3, class: live ? "rt-block-live" : "rt-block-closed"});
+  g.appendChild(rect);
+  g.addEventListener("click", () => { if (sess.feature_id) openForensics(sess.feature_id); });
+  root.appendChild(g);
+  const els = { rect, group:g, label:null, underline:null, laneY:y };
+  ensureBlockLabel(els, sess, live);
+  const v = STATE.verdicts[verdictKey(sess.feature_id, sess.attempt)];
+  if (v){
+    els.underline = svg("rect", {x:x0, y:y+26, width:w, height:2, class: v==="pass" ? "rt-underline-pass" : "rt-underline-fail"});
+    root.appendChild(els.underline);
+  }
+  STATE.trackEls[sess.session_id] = els;
+}
+
+function trackAddBlock(sess){
+  if (STATE.trackMode !== "full"){ rebuildTrackSvg(); return; }
+  if (document.hidden) return;
+  trackDrawBlock(sess);
+}
+
+function trackCloseBlock(sess){
+  if (document.hidden) return;
+  if (STATE.trackMode !== "full"){ rebuildTrackSvg(); return; }
+  const els = STATE.trackEls[sess.session_id];
+  if (!els) return;
+  const x0 = scaleX(sess.start_ts);
+  const x1 = scaleX(sess.end_ts || Date.now());
+  const w = Math.max(2, x1-x0);
+  els.rect.setAttribute("width", w);
+  els.rect.setAttribute("class", "rt-block-closed");
+  els.group.setAttribute("data-tip", blockTip(sess));
+  ensureBlockLabel(els, sess, false);
+  if (els.underline) els.underline.setAttribute("width", w);
+}
+
+function trackApplyVerdict(fid, attempt, verdict){
+  STATE.verdicts[verdictKey(fid, attempt)] = verdict;
+  if (document.hidden || STATE.trackMode !== "full") return; // rebuild paths redraw from the map
+  const root = $("#run-track-svg");
+  for (const sid of STATE.sessionOrder){
+    const s = STATE.sessions[sid];
+    if (!s || s.feature_id !== fid || (s.attempt||0) !== (attempt||0)) continue;
+    const els = STATE.trackEls[sid];
+    if (!els || els.underline) continue;
+    const x0 = scaleX(s.start_ts), x1 = scaleX(s.end_ts || Date.now());
+    els.underline = svg("rect", {
+      x:x0, y:els.laneY+26, width:Math.max(2, x1-x0), height:2,
+      class: verdict==="pass" ? "rt-underline-pass" : "rt-underline-fail"
+    });
+    root.appendChild(els.underline);
+  }
+}
+
+function trackDrawMarker(m){
+  const root = $("#run-track-svg");
+  const i = laneIndex(m.lane);
+  const y = laneY(i);
+  const x = scaleX(m.ts);
+  const ring = i%2===0 ? "rt-ring-a" : "rt-ring-b";
+  let el;
+  if (m.kind === "tick-ok"){
+    el = svg("circle", {cx:x, cy:y+LANE_H-8, r:4, class:"rt-marker-ok "+ring});
+  } else if (m.kind === "tick-fail"){
+    const cy = y+LANE_H-8;
+    const d = `M${x-4},${cy-4}L${x+4},${cy+4}M${x+4},${cy-4}L${x-4},${cy+4}`;
+    el = svg("g", {});
+    el.appendChild(svg("path", {d, class:"rt-marker-fail-halo "+ring}));
+    el.appendChild(svg("path", {d, class:"rt-marker-fail"}));
+  } else if (m.kind === "diamond"){
+    const cy = y+9, s = 5;
+    const cls = m.verdict === "pass" ? "rt-marker-verdict-pass" : "rt-marker-verdict-fail";
+    el = svg("polygon", {points:`${x},${cy-s} ${x+s},${cy} ${x},${cy+s} ${x-s},${cy}`, class:cls+" "+ring});
+  } else { // flag-ok / flag-fail pennants
+    const cy = y+LANE_H-10;
+    const cls = m.kind === "flag-fail" ? "rt-marker-flag-fail" : "rt-marker-flag-ok";
+    el = svg("polygon", {points:`${x},${cy} ${x+8},${cy+3} ${x},${cy+6}`, class:cls+" "+ring});
+  }
+  let tip = (MARKER_LABELS[m.kind]||m.kind) + (m.kind === "diamond" && m.verdict ? " — " + m.verdict : "");
+  if (m.feature_id) tip += "\n" + m.feature_id + (m.attempt ? " · attempt " + m.attempt : "");
+  el.setAttribute("data-tip", tip);
+  root.appendChild(el);
+}
+
+function trackAddMarker(row, lane, kind){
+  const m = {
+    ts: parseTs(row.ts), lane, kind, feature_id: row.feature_id, attempt: row.attempt,
+    verdict: (row.data && row.data.verdict) || null
+  };
+  STATE.markersList.push(m);
+  if (STATE.markersList.length > 800) STATE.markersList.shift();
+  if (STATE.trackMode !== "full"){ rebuildTrackSvg(); return; }
+  if (document.hidden) return;
+  trackDrawMarker(m);
+}
+
+function trackDrawGlobalLine(gl){
+  const root = $("#run-track-svg");
+  const x = scaleX(gl.ts);
+  const g = svg("g", {class:"rt-global " + (gl.kind === "stop" ? "rt-global-danger" : "rt-global-warn")});
+  g.appendChild(svg("line", {x1:x, y1:0, x2:x, y2:SVG_H}));
+  // second text row (y=26): band labels own y=13, so pin labels never collide with them
+  const t = svg("text", {x:x+3, y:26});
+  t.textContent = gl.kind;
+  g.appendChild(t);
+  g.setAttribute("data-tip", gl.kind === "stop" ? "stop condition met" : "budget warning");
+  root.appendChild(g);
+}
+
+function trackAddGlobalLine(row, kind){
+  const gl = { ts: parseTs(row.ts), kind };
+  STATE.globalLines.push(gl);
+  if (document.hidden || STATE.trackMode !== "full") return;
+  trackDrawGlobalLine(gl);
+}
+
+function updateBand(fid, ts){
+  const last = STATE.bands[STATE.bands.length-1];
+  if (last && last.fid === fid && last.end == null) return;
+  if (last && last.end == null) last.end = ts;
+  STATE.bands.push({ fid, start: ts, end: null });
+  if (STATE.trackMode === "full" && !document.hidden){
+    // draw a sliver immediately; zebra/active fills catch up on next rebuild
+    const root = $("#run-track-svg");
+    if (root.childElementCount){
+      const x0 = scaleX(ts);
+      if ((STATE.bands.length-1) % 2 === 0){
+        root.appendChild(svg("rect", {x:x0, y:0, width:1, height:SVG_H, class:"rt-band-zebra"}));
+      }
+      // no label on the 1px sliver — it gains one on the next rebuild once wide enough
+    }
+  }
+}
+
+function trackTick(){
+  if (document.hidden) return;
+  if (STATE.trackMode === "hour"){ rebuildTrackSvg(); return; }
+  if (!STATE.trackDomain) return;
+  const now = Date.now();
+  const cx = scaleX(now);
+  if (STATE.cursorEl) STATE.cursorEl.setAttribute("transform", `translate(${cx},0)`);
+  if (STATE.liveSessionId){
+    const sess = STATE.sessions[STATE.liveSessionId];
+    const els = STATE.trackEls[STATE.liveSessionId];
+    if (sess && els){
+      const x0 = scaleX(sess.start_ts);
+      const w = Math.max(2, cx-x0);
+      els.rect.setAttribute("width", w);
+      if (els.underline) els.underline.setAttribute("width", w);
+      ensureBlockLabel(els, sess, true);
+    }
+  }
+  // extend the open feature band width too
+  const openBand = STATE.bands[STATE.bands.length-1];
+  if (openBand && openBand.end == null){
+    // bands are drawn as thin rect at inception; a full rebuild-free
+    // "grow" isn't tracked per-element, so bands visually catch up on
+    // the next rebuild (zoom toggle, resize, or run_start). This keeps
+    // the tick path limited to cursor + open block per contract.
+  }
+}
+
+function setZoom(mode){
+  STATE.trackMode = mode;
+  $("#zoom-full").classList.toggle("active", mode==="full");
+  $("#zoom-hour").classList.toggle("active", mode==="hour");
+  rebuildTrackSvg();
+}
+
+// ---------------------------------------------------------------------
+// Right Now / transcript tail
+// ---------------------------------------------------------------------
+
+function startTranscriptPolling(dir, role, fid, attempt){
+  stopTranscriptPolling();
+  STATE.transcriptDir = dir;
+  STATE.transcriptOffset = 0;
+  STATE.transcriptSamples = [];
+  STATE.transcriptLines = [];
+  renderTranscriptContainer();
+  $("#rn-prompt-link").classList.remove("hidden");
+  $("#rn-transcript-link").classList.remove("hidden");
+  $("#rn-prompt-link").href = `/api/session/${dir}/prompt.md`;
+  $("#rn-transcript-link").href = `/api/session/${dir}/transcript.jsonl?offset=0&limit=4194304`;
+  if (!dir) return;
+  pollTranscriptOnce();
+  STATE.transcriptTimer = setInterval(() => {
+    if (!document.hidden) pollTranscriptOnce();
+  }, 1000);
+}
+
+function stopTranscriptPolling(){
+  if (STATE.transcriptTimer){ clearInterval(STATE.transcriptTimer); STATE.transcriptTimer = null; }
+}
+
+function pollTranscriptOnce(){
+  if (!STATE.transcriptDir) return;
+  fetchText(`/api/session/${STATE.transcriptDir}/transcript.jsonl?offset=${STATE.transcriptOffset}&limit=65536`)
+    .then(({text, headers}) => {
+      const next = parseInt(headers.get("X-Next-Offset")||STATE.transcriptOffset, 10);
+      const grew = Math.max(0, next - STATE.transcriptOffset);
+      STATE.transcriptOffset = next;
+      STATE.transcriptSamples.push({ ts: Date.now(), bytes: grew });
+      const cutoff = Date.now() - 60000;
+      STATE.transcriptSamples = STATE.transcriptSamples.filter(s => s.ts >= cutoff);
+      if (text){
+        for (const line of text.split("\n")){
+          if (line.trim() === "") continue;
+          appendTranscriptLine(line);
+        }
+      }
+      renderLiveness();
+    })
+    .catch(() => {});
+}
+
+function appendTranscriptLine(line){
+  let rec;
+  try{
+    const obj = JSON.parse(line);
+    rec = parseStreamRow(obj);
+  }catch(e){
+    rec = { kind:"raw", text: line };
+  }
+  STATE.transcriptLines.push(rec);
+  if (STATE.transcriptLines.length > 200) STATE.transcriptLines.shift();
+  if (!document.hidden) appendTranscriptDom(rec);
+}
+
+function parseStreamRow(obj){
+  if (obj && obj.type === "assistant" && obj.message && Array.isArray(obj.message.content)){
+    const parts = [];
+    for (const block of obj.message.content){
+      if (block.type === "text") parts.push({kind:"text", text: block.text});
+      else if (block.type === "tool_use") parts.push({kind:"tool", text: `▸ ${block.name||"tool"}`});
+    }
+    return { kind:"group", parts };
+  }
+  if (obj && obj.type === "result"){
+    return { kind:"raw", text: "— result: " + (obj.subtype||"") + " " + (obj.result||"").slice(0,200) };
+  }
+  return { kind:"raw", text: JSON.stringify(obj).slice(0,400) };
+}
+
+function appendTranscriptDom(rec){
+  const box = $("#rn-transcript");
+  if (box.firstChild && box.firstChild.classList && box.firstChild.classList.contains("dim")) box.innerHTML = "";
+  const add = (cls, text) => {
+    const div = document.createElement("div");
+    div.className = cls; div.textContent = text;
+    box.appendChild(div);
+    while (box.children.length > 200) box.removeChild(box.firstChild);
+  };
+  if (rec.kind === "group"){
+    for (const p of rec.parts) add(p.kind==="tool" ? "t-tool" : "t-text", p.text);
+  } else if (rec.kind === "raw"){
+    add("t-raw", rec.text);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderTranscriptContainer(){
+  const box = $("#rn-transcript");
+  box.innerHTML = "";
+  box.appendChild(ce("div", {class:"t-raw dim", text:"tailing…"}));
+}
+
+function renderLiveness(){
+  if (document.hidden) return;
+  const bytes = STATE.transcriptSamples.reduce((a,s) => a+s.bytes, 0);
+  const dot = $("#rn-liveness");
+  dot.classList.toggle("alive", bytes > 0);
+  dot.title = bytes > 0
+    ? "receiving output — listening for caws"
+    : "no transcript output in the last 60s";
+  const suffix = bytes > 0 ? ` — transcript +${Math.round(bytes/1024)}kB in last 60s` : "";
+  $("#rn-phase").dataset.livenessSuffix = suffix;
+}
+
+function renderRightNowPhase(){
+  if (document.hidden) return;
+  const phaseEl = $("#rn-phase"), elapsedEl = $("#rn-elapsed");
+  if (STATE.liveSessionId && STATE.sessions[STATE.liveSessionId]){
+    const s = STATE.sessions[STATE.liveSessionId];
+    phaseEl.textContent = `${s.role} · ${s.feature_id||"—"} · attempt ${s.attempt||"?"}/${STATE.maxAttempts}` + (phaseEl.dataset.livenessSuffix||"");
+    elapsedEl.textContent = "elapsed " + fmtElapsed(s.start_ts);
+  } else {
+    const last = STATE.eventLog[STATE.eventLog.length-1];
+    phaseEl.textContent = last ? (PHASE_LABELS[last.event] || last.event) : "idle";
+    elapsedEl.textContent = "";
+    $("#rn-liveness").classList.remove("alive");
+  }
+}
+
+// ---------------------------------------------------------------------
+// Feature Board
+// ---------------------------------------------------------------------
+
+function renderFeatureBoard(){
+  if (document.hidden) return;
+  const list = $("#fb-list");
+  list.innerHTML = "";
+  const feats = STATE.features.slice().sort((a,b) => (a.priority-b.priority) || String(a.id).localeCompare(b.id));
+  let counts = { done:0, failed:0, blocked:0, todo:0, building:0 };
+  let buildingRow = null;
+  for (const f of feats){
+    counts[f.status] = (counts[f.status]||0) + 1;
+    const st = f.status || "todo";
+    const row = ce("div", {class:"fb-row" + (st==="building" ? " building":"")});
+    row.appendChild(ce("div", {class:"fb-badge " + st, text: BADGE_GLYPH[st]||""}));
+    const main = ce("div", {class:"fb-main"});
+    main.appendChild(ce("div", {class:"fb-title"}, ce("span", {class:"mono", text:String(f.id)}), ` · ${f.title||""}`));
+    const sub = ce("div", {class:"fb-sub"});
+    const dots = ce("div", {class:"fb-dots"});
+    for (let i=1;i<=STATE.maxAttempts;i++){
+      const fb = (f.feedback||[]).find(x => x.attempt===i);
+      const d = ce("div", {class:"fb-dot" + (fb ? " "+(fb.verdict==="pass"?"pass":"fail") : "")});
+      d.setAttribute("data-tip", `attempt ${i} — ${fb ? fb.verdict : "not played"}`);
+      d.setAttribute("data-tip-status", fb ? (fb.verdict==="pass"?"pass":"fail") : "pending");
+      dots.appendChild(d);
+    }
+    sub.appendChild(dots);
+    const crit = ce("div", {class:"fb-crit"});
+    for (const c of (f.acceptance_criteria||[])){
+      const v = c.last_verdict;
+      const sq = ce("div", {class:"fb-sq" + (v==="pass"?" pass":v==="fail"?" fail":"")});
+      sq.setAttribute("data-tip", `${c.id} — ${v||"pending"}`);
+      sq.setAttribute("data-tip-status", v==="pass"?"pass":v==="fail"?"fail":"pending");
+      crit.appendChild(sq);
+    }
+    sub.appendChild(crit);
+    if (f.status === "blocked" && f.blocked_reason){
+      const dep = String(f.blocked_reason).split(":")[1] || "";
+      sub.appendChild(ce("span", {class:"fb-dep", text: "waits on " + dep}));
+    }
+    main.appendChild(sub);
+    row.appendChild(main);
+    row.appendChild(ce("div", {class:"fb-cost", text: fmtMoney(f.cost_usd)}));
+    row.addEventListener("click", () => openForensics(f.id));
+    list.appendChild(row);
+    if (f.status === "building") buildingRow = row;
+  }
+  const foot = $("#fb-footer");
+  foot.innerHTML = "";
+  [["done","ok"],["failed","danger"],["blocked","hold"],["todo","todo"]].forEach(([name,cls],i) => {
+    if (i) foot.appendChild(document.createTextNode(" · "));
+    foot.appendChild(ce("span", {class:"fb-cdot "+cls}));
+    foot.appendChild(document.createTextNode(` ${counts[name]||0} ${name}`));
+  });
+  if (buildingRow && !STATE.userScrolledBoard){
+    buildingRow.scrollIntoView({ block:"nearest" });
+  }
+}
+
+$("#fb-list") && $("#fb-list").addEventListener("wheel", () => { STATE.userScrolledBoard = true; });
+
+// ---------------------------------------------------------------------
+// Feature Forensics
+// ---------------------------------------------------------------------
+
+function openForensics(fid){
+  const f = STATE.featuresById[fid];
+  if (!f) return;
+  STATE.forensicsFid = fid;
+  STATE.forensicsAttempt = f.attempts || 1;
+  $("#overlay-backdrop").classList.remove("hidden");
+  $("#forensics").classList.remove("hidden");
+  $("#overlay-backdrop").onclick = closeForensics;
+  renderForensicsBody();
+}
+
+function closeForensics(){
+  STATE.forensicsFid = null;
+  $("#forensics").classList.add("hidden");
+  $("#overlay-backdrop").classList.add("hidden");
+}
+
+function renderForensicsBody(){
+  const fid = STATE.forensicsFid;
+  const f = STATE.featuresById[fid];
+  const panel = $("#forensics");
+  if (!f){ panel.innerHTML = ""; return; }
+  panel.innerHTML = "";
+  const head = ce("div", {class:"fx-head"});
+  const htitle = ce("div", {});
+  htitle.appendChild(ce("div", {class:"fx-title"}, ce("span", {class:"mono", text:String(fid)}), ` — ${f.title||""}`));
+  const st = f.status || "todo";
+  const status = ce("div", {class:"fx-status"});
+  status.appendChild(ce("span", {class:"fb-badge " + st, text: BADGE_GLYPH[st]||""}));
+  status.appendChild(ce("span", {text: st}));
+  status.appendChild(ce("span", {class:"mono", text: fmtMoney(f.cost_usd)}));
+  const deps = f.depends_on || [];
+  if (deps.length){
+    status.appendChild(ce("span", {text:"depends on"}));
+    for (const dep of deps) status.appendChild(ce("span", {class:"chip", text:String(dep)}));
+  }
+  htitle.appendChild(status);
+  head.appendChild(htitle);
+  const closeBtn = ce("button", {class:"fx-close", "aria-label":"close", text:"✕"});
+  closeBtn.addEventListener("click", closeForensics);
+  head.appendChild(closeBtn);
+  panel.appendChild(head);
+
+  const body = ce("div", {class:"fx-body"});
+  const tabs = ce("div", {class:"fx-tabs seg-control"});
+  const attempts = Math.max(1, f.attempts||1);
+  for (let i=1;i<=attempts;i++){
+    const b = ce("button", {text:"attempt "+i});
+    if (i === STATE.forensicsAttempt) b.classList.add("active");
+    b.addEventListener("click", () => { STATE.forensicsAttempt = i; renderForensicsBody(); });
+    tabs.appendChild(b);
+  }
+  body.appendChild(tabs);
+
+  const attemptN = STATE.forensicsAttempt;
+  const fb = (f.feedback||[]).find(x => x.attempt===attemptN);
+
+  const critTable = ce("table", {class:"fx-crit-table"});
+  critTable.appendChild(ce("tr", {}, ce("th", {text:"criterion"}), ce("th", {text:"verdict"}), ce("th", {text:"note"})));
+  for (const c of (f.acceptance_criteria||[])){
+    const v = c.last_verdict;
+    const vchip = ce("span", {class:"vchip " + (v==="pass"?"pass":v==="fail"?"fail":"pending"),
+      text: v==="pass" ? "✓ pass" : v==="fail" ? "✕ fail" : "—"});
+    critTable.appendChild(ce("tr", {}, ce("td", {class:"mono", text:c.id}), ce("td", {}, vchip), ce("td", {text:c.text||""})));
+  }
+  body.appendChild(critTable);
+
+  if (fb && fb.bugs && fb.bugs.length){
+    const bugsWell = ce("div", {class:"fx-prose"});
+    for (const b of fb.bugs){
+      const sev = String(b.severity||"").toLowerCase();
+      const sevCls = /high|major|critical/.test(sev) ? "sev-high" : /med/.test(sev) ? "sev-med" : "sev-low";
+      const bug = ce("div", {class:"fx-bug"});
+      bug.appendChild(ce("span", {class:"fx-sev " + sevCls, text:`[${b.severity}]`}));
+      bug.appendChild(document.createTextNode(` ${b.criterion||""}: ${b.summary||""}`));
+      if (b.repro) bug.appendChild(ce("div", {class:"fx-repro", text:b.repro}));
+      bugsWell.appendChild(bug);
+    }
+    body.appendChild(bugsWell);
+  }
+
+  const prosePre = ce("div", {class:"fx-prose", text:"loading feedback…"});
+  body.appendChild(prosePre);
+  fetchText(`/api/feedback/${fid}`).then(({text}) => { prosePre.textContent = text; }).catch(() => { prosePre.textContent = "(no feedback yet)"; });
+
+  const shots = ce("div", {class:"fx-shots"});
+  body.appendChild(shots);
+  fetchJSON(`/api/screenshots/${fid}`).then(map => {
+    const names = map["attempt"+attemptN] || [];
+    shots.innerHTML = "";
+    for (const name of names){
+      const url = `/api/screenshot/${fid}/attempt${attemptN}/${name}`;
+      const img = ce("img", {src:url, loading:"lazy"});
+      img.addEventListener("click", () => openLightbox(url));
+      shots.appendChild(img);
+    }
+  }).catch(() => {});
+
+  const links = ce("div", {class:"fx-links"});
+  for (const sid of STATE.sessionOrder){
+    const s = STATE.sessions[sid];
+    if (s && s.feature_id === fid && s.attempt === attemptN && s.dir){
+      links.appendChild(ce("div", {},
+        ce("a", {href:`/api/session/${s.dir}/prompt.md`, target:"_blank"}, ce("span", {class:"mono", text:s.role}), " prompt"),
+        document.createTextNode(" · "),
+        ce("a", {href:`/api/session/${s.dir}/transcript.jsonl?offset=0&limit=4194304`, target:"_blank", text:"transcript"})));
+    }
+  }
+  body.appendChild(links);
+
+  panel.appendChild(body);
+}
+
+function openLightbox(url){
+  const lb = $("#lightbox");
+  lb.innerHTML = "";
+  const img = ce("img", {src:url});
+  lb.appendChild(img);
+  lb.classList.remove("hidden");
+  lb.onclick = () => lb.classList.add("hidden");
+}
+
+// ---------------------------------------------------------------------
+// Event Tail drawer
+// ---------------------------------------------------------------------
+
+function appendEventDrawerRow(row){
+  $("#ed-count").textContent = STATE.eventLog.length + " events";
+  if (document.hidden) return;
+  const body = $("#ed-body");
+  const el = ce("div", {class:"ed-row", "data-event":row.event||"", "data-feature":row.feature_id||""});
+  el.appendChild(ce("span", {class:"ed-ev chip " + eventClass(row.event), text: row.event||""}));
+  el.appendChild(ce("span", {class:"ed-ts", text: (row.ts||"").replace("T"," ").replace("Z","")}));
+  el.appendChild(ce("span", {class:"ed-role", text: row.role||""}));
+  el.appendChild(ce("span", {class:"ed-feat", text: row.feature_id||""}));
+  let preview = "";
+  try{ preview = JSON.stringify(row.data||{}); }catch(e){}
+  el.appendChild(ce("span", {class:"ed-data", text: preview}));
+  el.addEventListener("click", () => {
+    let pretty = body.querySelector(".ed-pretty.open");
+    if (pretty) pretty.remove();
+    const p = ce("div", {class:"ed-pretty open", text: JSON.stringify(row, null, 2)});
+    el.insertAdjacentElement("afterend", p);
+  });
+  body.appendChild(el);
+  while (body.children.length > 500) body.removeChild(body.firstChild);
+  const filterVal = $("#ed-filter-feature").value.trim();
+  if (filterVal && row.feature_id !== filterVal) el.classList.add("hidden");
+  if ($("#ed-follow").checked) body.scrollTop = body.scrollHeight;
+}
+
+function rebuildEventDrawer(){
+  const body = $("#ed-body");
+  body.innerHTML = "";
+  for (const row of STATE.eventLog) appendEventDrawerRow(row);
+}
+
+// ---------------------------------------------------------------------
+// Empty state / bootstrap
+// ---------------------------------------------------------------------
+
+function showEmptyState(){
+  $("#empty-state").classList.remove("hidden");
+  $("#app").classList.add("hidden");
+}
+function hideEmptyState(){
+  $("#empty-state").classList.add("hidden");
+  $("#app").classList.remove("hidden");
+}
+
+function fullRerender(){
+  renderVitalsRun();
+  renderVitalsCost();
+  renderVitalsStale();
+  renderFeatureBoard();
+  renderRightNowPhase();
+  rebuildTrackSvg();
+  rebuildEventDrawer();
+  renderLiveness();
+}
+
+function boot(){
+  initTooltip();
+  fetchJSON("/api/meta").then(meta => {
+    $("#empty-root").textContent = meta.root || "";
+  }).catch(() => {});
+
+  $("#zoom-full").addEventListener("click", () => setZoom("full"));
+  $("#zoom-hour").addEventListener("click", () => setZoom("hour"));
+  $("#ed-head").addEventListener("click", () => {
+    const nowHidden = $("#ed-filters").classList.toggle("hidden");
+    $("#ed-body").classList.toggle("hidden");
+    $("#ed-chevron").classList.toggle("open", !nowHidden);
+  });
+  $("#ed-filter-feature").addEventListener("input", () => {
+    const v = $("#ed-filter-feature").value.trim();
+    for (const el of $("#ed-body").children){
+      el.classList.toggle("hidden", !!v && el.dataset.feature !== v);
+    }
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape"){
+      const lb = $("#lightbox");
+      if (!lb.classList.contains("hidden")) lb.classList.add("hidden");
+    }
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) fullRerender();
+  });
+
+  // keep 1 viewBox unit == 1 CSS px (debounced 150ms)
+  if (window.ResizeObserver){
+    let rtResizeTimer = null;
+    const ro = new ResizeObserver(() => {
+      clearTimeout(rtResizeTimer);
+      rtResizeTimer = setTimeout(() => { if (!document.hidden) rebuildTrackSvg(); }, 150);
+    });
+    ro.observe($("#run-track-svg"));
+  }
+
+  setInterval(() => {
+    if (document.hidden) return;
+    renderVitalsStale();
+    renderRightNowPhase();
+    trackTick();
+  }, 1000);
+
+  connectStream(0, 0);
+}
+
+document.addEventListener("DOMContentLoaded", boot);
+
+})();
+</script>
+</body>
+</html>
