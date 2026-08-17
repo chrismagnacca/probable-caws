@@ -466,6 +466,38 @@ class GitHelperTests(unittest.TestCase):
         orch.git_tag(self.repo, "good/BASELINE", env=_git_env())
         self.assertFalse(orch.git_has_feature_tag(self.repo))
 
+    def test_current_branch_and_create_branch(self):
+        (self.repo / "file.txt").write_text("v1")
+        orch.git_commit_all(self.repo, "v1", env=_git_env())
+        _git(self.repo, "branch", "-M", "main")
+        self.assertEqual(orch.git_current_branch(self.repo), "main")
+
+        self.assertTrue(orch.git_create_branch(self.repo, "run/20260817-000000-ab12", env=_git_env()))
+        self.assertEqual(orch.git_current_branch(self.repo), "run/20260817-000000-ab12")
+        # creating a branch that already exists fails rather than resetting it
+        self.assertFalse(orch.git_create_branch(self.repo, "run/20260817-000000-ab12", env=_git_env()))
+
+    def test_current_branch_none_on_detached_head(self):
+        (self.repo / "file.txt").write_text("v1")
+        orch.git_commit_all(self.repo, "v1", env=_git_env())
+        head = subprocess.run(["git", "-C", str(self.repo), "rev-parse", "HEAD"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+        _git(self.repo, "checkout", "-q", head)
+        self.assertIsNone(orch.git_current_branch(self.repo))
+
+
+class RunBranchDecisionTests(unittest.TestCase):
+    def test_protected_branches_get_run_branch(self):
+        self.assertEqual(orch.run_branch_decision("main", "R1"), "run/R1")
+        self.assertEqual(orch.run_branch_decision("master", "R1"), "run/R1")
+
+    def test_detached_head_gets_run_branch(self):
+        self.assertEqual(orch.run_branch_decision(None, "R1"), "run/R1")
+
+    def test_other_branches_left_alone(self):
+        self.assertIsNone(orch.run_branch_decision("run/20260817-000000-ab12", "R1"))
+        self.assertIsNone(orch.run_branch_decision("feature-x", "R1"))
+
 
 if __name__ == "__main__":
     unittest.main()

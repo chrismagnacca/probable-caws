@@ -714,6 +714,7 @@ function dispatch(row){
       trackAddMarker(row, "evaluator", "diamond");
       break;
     }
+    case "git_branch": trackAddMarker(row, "git", "flag-ok"); break;
     case "git_checkpoint": trackAddMarker(row, "git", "flag-ok"); break;
     case "git_rollback": trackAddMarker(row, "git", "flag-fail"); break;
     case "budget_warn": STATE.budgetWarned = true; trackAddGlobalLine(row, "budget"); renderVitalsCost(); break;

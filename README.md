@@ -123,6 +123,18 @@ for startup failures (doctor fail, unreadable config, lock held, port in use).
   `state/`, `logs/`, or the root repo's history — the record of what happened is preserved even if
   the code is rolled back.
 
+## Run branches
+
+State snapshots are committed to this repo after every attempt, but never onto your published
+branch: at run start, if the workspace is on `main`/`master` (or a detached HEAD), the
+orchestrator creates and checks out `run/<run_id>` and all of the run's audit-trail commits land
+there (a `git_branch` event records the switch). If you start a run from any other branch — say a
+`run/*` branch you're resuming, or one you named yourself — it's used as-is. So:
+
+- `main` stays exactly the harness code you've published; push it freely.
+- `git branch --list 'run/*'` lists your past runs; check one out to browse its evidence trail,
+  push it if you want the record on GitHub, or delete it to discard the record.
+
 ## Reading a post-mortem (the file trail)
 
 Everything the harness and its agents did is on disk, in order:
@@ -175,10 +187,12 @@ screenshots for each attempt.
 4. **Two git repos, cleanly separated.** Repo #1 (this workspace) holds the harness itself; during
    a run the orchestrator also commits a per-attempt snapshot of `state/` (verdicts, feedback,
    decisions, screenshots) into it, so its history records how each feature's evidence evolved.
-   Repo #2 (`app/`, ignored by repo #1 and created by `bootstrap.sh`) holds only the product code,
-   checkpoint-tagged `good/F###` so it can be rolled back independently without touching that
-   record. Run logs (`logs/`) belong to neither repo — they're deliberately untracked plain files,
-   so transcripts and event streams survive any git rollback untouched.
+   Those snapshots never land on `main`: at run start the orchestrator branches to `run/<run_id>`
+   (see *Run branches* above), keeping the published harness history clean. Repo #2 (`app/`,
+   ignored by repo #1 and created by `bootstrap.sh`) holds only the product code, checkpoint-tagged
+   `good/F###` so it can be rolled back independently without touching that record. Run logs
+   (`logs/`) belong to neither repo — they're deliberately untracked plain files, so transcripts
+   and event streams survive any git rollback untouched.
 5. **Observability is a first-class feature.** Every session, cost, verdict, and screenshot is
    recorded as it happens, in formats meant to be tailed, diffed, and replayed — not just logged
    for debugging.

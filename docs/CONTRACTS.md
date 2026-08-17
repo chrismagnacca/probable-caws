@@ -60,7 +60,12 @@ tests/
 
 Git topology: workspace root is repo #1 (state history; the orchestrator commits `state/` and
 `scripts/app.env` after each iteration IF the root is a git repo, else logs a `warning` event and
-continues). `app/` is repo #2 with tags `good/BASELINE` (at bootstrap) and `good/F###` (per passing
+continues). Run-branch guard: at run start, if repo #1's checked-out branch is `main` or `master`
+(or HEAD is detached), the orchestrator creates and checks out `run/<run_id>` from the current
+HEAD before any state commit, emitting a `git_branch` event — so published harness history stays
+clean and each run's audit trail lives on its own branch. Any other branch (e.g. an existing
+`run/*` branch on resume) is left as-is. Branch creation failure downgrades to a `warning` event
+and the run continues on the current branch. `app/` is repo #2 with tags `good/BASELINE` (at bootstrap) and `good/F###` (per passing
 feature). Code rollback (`git -C app reset --hard <last-good-tag> && git -C app clean -fd`) can never
 touch the record in repo #1 or `logs/`. Neither the harness code nor tests ever run `git push`.
 The harness itself NEVER runs `git init` implicitly — only `scripts/bootstrap.sh` does.
@@ -146,14 +151,15 @@ claude -p --verbose --output-format stream-json --model <model> --max-turns <n> 
 
 `event` is a CLOSED enum: `run_start doctor_ok feature_selected contract_compiled session_start
 session_end session_retry precheck_pass precheck_fail app_boot_ok app_boot_failed eval_verdict
-feature_done feature_failed feature_blocked escalation git_checkpoint git_rollback budget_warn
-stop_condition_met run_end warning error`.
+feature_done feature_failed feature_blocked escalation git_branch git_checkpoint git_rollback
+budget_warn stop_condition_met run_end warning error`.
 Required `data` payloads:
 - `run_start.data` = `{config: <full config echo>, claude_version, auth_mode: "api_key"|"subscription",
   prompt: <PROMPT.md text>}` (viewer depends on this).
 - `session_start.data` = `{session_dir: "0007-generator-F003", model}` (viewer depends on this).
 - `session_end.data` = `{exit_reason, wall_s, cost_usd}`.
 - `run_end.data` = `{stop_reason: <enum>, human: "<one sentence>", done: n, failed: n, blocked: n}`.
+- `git_branch.data` = `{branch: "run/<run_id>", from: "<previous branch or 'DETACHED'>"}`.
 - `precheck_fail.data` / `app_boot_failed.data` include `{log_tail: "<last ~80 lines>"}`.
 
 `logs/ledger.jsonl` — one row per session (including retries and planner):

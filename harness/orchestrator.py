@@ -34,7 +34,7 @@ EVENT_TYPES = {
     "run_start", "doctor_ok", "feature_selected", "contract_compiled", "session_start",
     "session_end", "session_retry", "precheck_pass", "precheck_fail", "app_boot_ok",
     "app_boot_failed", "eval_verdict", "feature_done", "feature_failed", "feature_blocked",
-    "escalation", "git_checkpoint", "git_rollback", "budget_warn", "stop_condition_met",
+    "escalation", "git_branch", "git_checkpoint", "git_rollback", "budget_warn", "stop_condition_met",
     "run_end", "warning", "error",
 }
 
@@ -451,6 +451,33 @@ def git_rollback(repo, tag: str, env: Optional[dict] = None) -> bool:
     return r1.returncode == 0 and r2.returncode == 0
 
 
+def git_current_branch(repo) -> Optional[str]:
+    """Checked-out branch name, or None when HEAD is detached / not a repo."""
+    result = subprocess.run(
+        ["git", "-C", str(repo), "symbolic-ref", "--short", "-q", "HEAD"],
+        capture_output=True, text=True,
+    )
+    name = (result.stdout or "").strip()
+    return name if result.returncode == 0 and name else None
+
+
+def git_create_branch(repo, name: str, env: Optional[dict] = None) -> bool:
+    result = subprocess.run(["git", "-C", str(repo), "checkout", "-b", name],
+                            capture_output=True, env=env)
+    return result.returncode == 0
+
+
+PROTECTED_BRANCHES = frozenset({"main", "master"})
+
+
+def run_branch_decision(current_branch: Optional[str], run_id: str) -> Optional[str]:
+    """Branch to create before state commits, or None to stay put. State history
+    must never land on a protected (published) branch or a detached HEAD."""
+    if current_branch is None or current_branch in PROTECTED_BRANCHES:
+        return f"run/{run_id}"
+    return None
+
+
 def git_is_dirty(repo) -> bool:
     if not is_git_repo(repo):
         return False
@@ -581,6 +608,7 @@ class Orchestrator:
         self._acquire_lock()
         try:
             self._emit_run_start()
+            self._ensure_run_branch()
             self._startup_recovery()
             stop_reason = self._planner_phase()
             if stop_reason is None:
@@ -780,6 +808,19 @@ class Orchestrator:
             f.write(line)
 
     # -- git / state-repo checkpointing -------------------------------------------------
+
+    def _ensure_run_branch(self) -> None:
+        if not is_git_repo(self.root):
+            return
+        current = git_current_branch(self.root)
+        target = run_branch_decision(current, self.run_id)
+        if target is None:
+            return
+        if git_create_branch(self.root, target):
+            self._emit_event("git_branch", data={"branch": target, "from": current or "DETACHED"})
+        else:
+            self._emit_event("warning", data={
+                "reason": f"could not create run branch {target}; continuing on {current or 'DETACHED'}"})
 
     def _commit_state_repo_iteration(self, feature_id: str, attempt: int) -> None:
         if not is_git_repo(self.root):
