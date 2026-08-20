@@ -175,6 +175,39 @@ screenshots for each attempt.
 | `viewer.port` | Default port for `serve`. |
 | `runner.default` / `.planner` / `.generator` / `.evaluator` | (Optional) Which agent runtime fills each role: `claude` (default), `codex`, `gemini`, or `kimi`. Absent means all-`claude`. Non-claude runners budget by tokens, ignore `max_turns` (the timeout is the backstop), and their auth/model setup belongs to their own CLI — see `docs/CONTRACTS.md` §4b for each runner's verification status. |
 
+## Runners (Claude, Codex, Gemini, Kimi)
+
+The harness talks to agent runtimes through a runner seam (`docs/CONTRACTS.md` §4b): the
+orchestrator, event/ledger schemas, `state/`, and the cockpit are provider-agnostic, and each
+provider is one small module that assembles a CLI command and maps its output onto the shared
+`SessionResult`. Four runners are registered:
+
+| Runner | Wraps | Verification status |
+| --- | --- | --- |
+| `claude` (default) | `claude -p --output-format stream-json` | Fully verified — the reference runner. |
+| `codex` | `codex exec --json` (sandbox: `workspace-write`) | Live-verified end-to-end (ok + error paths) against codex-cli 0.146.0. |
+| `gemini` | `gemini --output-format stream-json --yolo` | Authored from the official headless docs; not yet run live. |
+| `kimi` | `kimi -p … --output-format stream-json --auto` | Flags verified against CLI 0.31.1; parsing authored from docs, not yet run live (needs `kimi login`). |
+
+Pick per role in `config.json` — absent block means all-`claude`:
+
+```json
+"runner": {"default": "claude", "generator": "codex"}
+```
+
+Things to know when using a non-claude runner:
+
+- **Auth and models belong to that CLI.** Sign in with its own flow (`codex login`, `gemini`,
+  `kimi login`); the `models.*` strings pass through verbatim (empty string = the CLI's default).
+- **Budgets are token-based.** None of the three reports USD, so runs budget against
+  `budget.max_tokens`. Kimi may report no usage at all — doctor surfaces that advisory.
+- **`max_turns` is ignored** — no equivalent exists; the per-role wall-clock timeout is the backstop.
+- **Containment differs.** Only Claude sessions obey `.claude/settings.json`. Codex brings its own
+  sandbox (`workspace-write`); Gemini `--yolo` and Kimi `--auto` auto-approve with weaker
+  containment — see *Security limits* below.
+- `python3 -m harness doctor` preflights whichever runners your config selects (missing CLI or an
+  unknown runner name is fatal before any session spends a token).
+
 ## Design, in brief
 
 1. **Files, not memory, coordinate agents.** Every `claude -p` session is a fresh process with no
@@ -207,7 +240,10 @@ There is **no OS-level sandbox** here — on macOS, agent sessions run as your o
 own filesystem and network access. Containment is two things only: the permission policy in
 `.claude/settings.json` (a scoped allow-list for Edit/Write/Bash, plus a short deny-list for the
 obviously dangerous stuff — `git push`, `sudo`, `rm -rf /`, SSH/AWS credential reads, `WebFetch`)
-and the fact that all code changes land in a git repo you can diff and roll back. This is real but
+and the fact that all code changes land in a git repo you can diff and roll back. That permission
+policy binds **Claude sessions only** — if you select the `codex` runner it substitutes Codex's own
+sandbox (`workspace-write`), while `gemini --yolo` and `kimi --auto` auto-approve tool calls with
+no equivalent policy file, so treat those as the weakest link in a mixed run. This is real but
 partial protection: a sufficiently motivated or confused agent session can still do things inside
 the allow-list you wouldn't want. If you need stronger isolation, the natural graduation path is
 running the harness as a **dedicated, unprivileged local user** (or in a container/VM) with its
