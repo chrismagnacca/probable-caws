@@ -388,6 +388,100 @@ class CompileContractTests(unittest.TestCase):
         self.assertIn("prose feedback", text)
 
 
+class ReviewEnabledTests(unittest.TestCase):
+    def test_absent_config_is_disabled(self):
+        self.assertFalse(orch.review_enabled({}))
+
+    def test_enabled_true(self):
+        self.assertTrue(orch.review_enabled({"review": {"enabled": True}}))
+
+    def test_enabled_false_explicit(self):
+        self.assertFalse(orch.review_enabled({"review": {"enabled": False}}))
+
+
+class ValidateReviewVerdictTests(unittest.TestCase):
+    def test_approve_with_no_findings_ok(self):
+        doc = {"feature_id": "F003", "attempt": 2, "verdict": "approve", "findings": [], "summary": "fine"}
+        ok, errors = orch.validate_review_verdict(doc, "F003", 2)
+        self.assertTrue(ok, errors)
+        self.assertEqual(errors, [])
+
+    def test_reject_with_major_finding_ok(self):
+        doc = {
+            "feature_id": "F003", "attempt": 2, "verdict": "reject",
+            "findings": [{"severity": "major", "file": "app/src/x.js", "summary": "bug"}],
+        }
+        ok, errors = orch.validate_review_verdict(doc, "F003", 2)
+        self.assertTrue(ok, errors)
+
+    def test_reject_with_blocker_finding_ok(self):
+        doc = {
+            "feature_id": "F003", "attempt": 2, "verdict": "reject",
+            "findings": [{"severity": "blocker", "summary": "security hole"}],
+        }
+        ok, errors = orch.validate_review_verdict(doc, "F003", 2)
+        self.assertTrue(ok, errors)
+
+    def test_reject_with_only_minor_findings_invalid(self):
+        doc = {
+            "feature_id": "F003", "attempt": 2, "verdict": "reject",
+            "findings": [{"severity": "minor", "summary": "nitpick"}],
+        }
+        ok, errors = orch.validate_review_verdict(doc, "F003", 2)
+        self.assertFalse(ok)
+        self.assertTrue(errors)
+
+    def test_wrong_feature_id_invalid(self):
+        doc = {"feature_id": "F999", "attempt": 2, "verdict": "approve", "findings": []}
+        ok, errors = orch.validate_review_verdict(doc, "F003", 2)
+        self.assertFalse(ok)
+        self.assertTrue(any("feature_id" in e for e in errors))
+
+    def test_non_dict_invalid(self):
+        ok, errors = orch.validate_review_verdict(["not", "a", "dict"], "F003", 2)
+        self.assertFalse(ok)
+        self.assertTrue(errors)
+
+    def test_missing_verdict_field_invalid(self):
+        doc = {"feature_id": "F003", "findings": []}
+        ok, errors = orch.validate_review_verdict(doc, "F003", 2)
+        self.assertFalse(ok)
+
+    def test_bad_severity_invalid(self):
+        doc = {
+            "feature_id": "F003", "verdict": "approve",
+            "findings": [{"severity": "catastrophic", "summary": "x"}],
+        }
+        ok, errors = orch.validate_review_verdict(doc, "F003", 2)
+        self.assertFalse(ok)
+
+    def test_finding_missing_summary_invalid(self):
+        doc = {
+            "feature_id": "F003", "verdict": "approve",
+            "findings": [{"severity": "minor"}],
+        }
+        ok, errors = orch.validate_review_verdict(doc, "F003", 2)
+        self.assertFalse(ok)
+
+    def test_top_level_summary_missing_is_tolerated(self):
+        doc = {"feature_id": "F003", "verdict": "approve", "findings": []}
+        ok, errors = orch.validate_review_verdict(doc, "F003", 2)
+        self.assertTrue(ok, errors)
+
+
+class TruncateDiffTests(unittest.TestCase):
+    def test_under_limit_unchanged(self):
+        text = "\n".join(f"line {i}" for i in range(10))
+        self.assertEqual(orch.truncate_diff(text, max_lines=4000), text)
+
+    def test_over_limit_truncated_with_marker(self):
+        text = "\n".join(f"line {i}" for i in range(50))
+        result = orch.truncate_diff(text, max_lines=10)
+        self.assertNotIn("line 49", result)
+        self.assertIn("line 9", result)
+        self.assertIn("[diff truncated: 40 more lines]", result)
+
+
 class WriteAtomicTests(unittest.TestCase):
     def test_write_then_read_roundtrip(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -477,6 +571,28 @@ class GitHelperTests(unittest.TestCase):
         # creating a branch that already exists fails rather than resetting it
         self.assertFalse(orch.git_create_branch(self.repo, "run/20260817-000000-ab12", env=_git_env()))
 
+    def test_tree_snapshot_and_restore(self):
+        (self.repo / "file.txt").write_text("v1")
+        orch.git_commit_all(self.repo, "v1", env=_git_env())
+
+        before = orch.git_tree_snapshot(self.repo, env=_git_env())
+        self.assertIsNotNone(before)
+
+        (self.repo / "file.txt").write_text("modified by reviewer")
+        (self.repo / "new_file.txt").write_text("untracked new file")
+        after = orch.git_tree_snapshot(self.repo, env=_git_env())
+        self.assertIsNotNone(after)
+        self.assertNotEqual(before, after)
+
+        self.assertTrue(orch.git_restore_tree(self.repo, before, env=_git_env()))
+        self.assertEqual((self.repo / "file.txt").read_text(), "v1")
+        self.assertFalse((self.repo / "new_file.txt").exists())
+        self.assertFalse(orch.git_is_dirty(self.repo))
+
+    def test_tree_snapshot_returns_none_for_non_repo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(orch.git_tree_snapshot(Path(tmp)))
+
     def test_current_branch_none_on_detached_head(self):
         (self.repo / "file.txt").write_text("v1")
         orch.git_commit_all(self.repo, "v1", env=_git_env())
@@ -533,6 +649,22 @@ class RunnerSeamTests(unittest.TestCase):
             results = doctor.check_runners(Path(tmp))
             fatal = [c for c in results if not c.ok and not c.warn and "nope" in c.message]
             self.assertEqual(len(fatal), 1)
+
+    def test_configured_runners_excludes_reviewer_when_review_disabled(self):
+        from harness import doctor
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "config.json").write_text(json.dumps({}), encoding="utf-8")
+            names = [n for n, _ in doctor._configured_runners(Path(tmp))]
+            self.assertEqual(names, ["claude"])
+
+    def test_configured_runners_includes_reviewer_when_review_enabled(self):
+        from harness import doctor
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "config.json").write_text(
+                json.dumps({"review": {"enabled": True}, "runner": {"reviewer": "codex"}}),
+                encoding="utf-8")
+            names = [n for n, _ in doctor._configured_runners(Path(tmp))]
+            self.assertIn("codex", names)
 
 
 if __name__ == "__main__":

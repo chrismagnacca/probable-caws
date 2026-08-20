@@ -77,8 +77,11 @@ def _configured_runners(root: Path) -> list:
         config = orchestrator.load_config(root)
     except Exception:
         config = {}
+    roles = ["planner", "generator", "evaluator"]
+    if orchestrator.review_enabled(config):
+        roles.append("reviewer")
     out = []
-    for role in ("planner", "generator", "evaluator"):
+    for role in roles:
         name = orchestrator.resolve_runner_name(config, role)
         if name not in [n for n, _ in out]:
             out.append((name, orchestrator.RUNNERS.get(name)))

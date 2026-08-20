@@ -78,10 +78,11 @@ The harness itself NEVER runs `git init` implicitly — only `scripts/bootstrap.
 
 - Feature IDs: `F` + 3 digits, `F001`… (`^F\d{3}$`). `F000` is reserved for the Planner session's dir.
 - Feature status: `todo | building | done | failed | blocked` (no other values, ever).
-- Roles: `planner | generator | evaluator`.
+- Roles: `planner | generator | evaluator | reviewer` (reviewer sessions run only when
+  `review.enabled`, section 7b).
 - Git tags: `good/BASELINE`, `good/F###`.
 - Session dir: `logs/sessions/<seq:04d>-<role>-<F###>/` e.g. `0007-generator-F003`
-  (`^\d{4}-(planner|generator|evaluator)-F\d{3}$`). Planner uses `0001-planner-F000`.
+  (`^\d{4}-(planner|generator|evaluator|reviewer)-F\d{3}$`). Planner uses `0001-planner-F000`.
 - `seq` = 1 + number of rows currently in `logs/ledger.jsonl` (derived, never stored).
 - `run_id` = `YYYYmmdd-HHMMSS-` + 4 hex chars from `os.urandom(2)`.
 - Stop reasons (machine enum): `BACKLOG_DONE | BACKLOG_STUCK | BUDGET_EXHAUSTED | CIRCUIT_BREAKER |
@@ -267,8 +268,8 @@ per-feature (rather than per-role) runner selection.
 
 `event` is a CLOSED enum: `run_start doctor_ok feature_selected contract_compiled session_start
 session_end session_retry precheck_pass precheck_fail app_boot_ok app_boot_failed eval_verdict
-feature_done feature_failed feature_blocked escalation git_branch git_checkpoint git_rollback
-budget_warn stop_condition_met run_end warning error`.
+feature_done feature_failed feature_blocked escalation review_verdict git_branch git_checkpoint
+git_rollback budget_warn stop_condition_met run_end warning error`.
 Required `data` payloads:
 - `run_start.data` = `{config: <full config echo>, claude_version, runners: {"<name>": "<version>"},
   auth_mode: "api_key"|"subscription", prompt: <PROMPT.md text>}` (viewer depends on
@@ -277,6 +278,7 @@ Required `data` payloads:
 - `session_end.data` = `{exit_reason, wall_s, cost_usd}`.
 - `run_end.data` = `{stop_reason: <enum>, human: "<one sentence>", done: n, failed: n, blocked: n}`.
 - `git_branch.data` = `{branch: "run/<run_id>", from: "<previous branch or 'DETACHED'>"}`.
+- `review_verdict.data` = `{verdict: "approve"|"reject", blockers: n, majors: n, minors: n}` (7b).
 - `precheck_fail.data` / `app_boot_failed.data` include `{log_tail: "<last ~80 lines>"}`.
 
 `logs/ledger.jsonl` — one row per session (including retries and planner):
@@ -369,6 +371,79 @@ merging, delete `state/screenshots/F###/` attempt dirs older than the newest
 session, the orchestrator marks the feature `blocked` (`blocked_reason="escalation:<kind>"`), logs
 `escalation` + decisions line, does NOT consume further attempts, moves on.
 
+## 7b. Adversarial review stage (STATUS: IMPLEMENTED — opt-in via `review.enabled`, default off)
+
+An optional fourth role, `reviewer`: a **white-box** adversarial code review of the Generator's
+diff, run per attempt between precheck and app boot. It is the deliberate inverse of the Evaluator
+(which stays black-box per section 0 and never reads source): the reviewer reads the code and
+never drives the app. Off by default; enabling it changes nothing else about the loop.
+
+### Placement in the iteration
+
+```
+Generator → check.sh (precheck) → [reviewer, if review.enabled] → start.sh/boot → Evaluator
+```
+
+Rationale: static review is cheap relative to boot+evaluation; a rejection short-circuits the
+attempt before the app ever boots. On **reject**: content failure — the attempt is consumed, the
+findings become the feedback for the next Generator attempt, boot and Evaluator are skipped. On
+**approve**: proceed to boot + evaluation exactly as today.
+
+### Config (all new keys optional; absent → stage disabled / claude defaults)
+
+- `review.enabled` (bool, default false) — master switch.
+- `models.reviewer`, `runner.reviewer` — model + provider per the section-4b seam; the README
+  RECOMMENDS a different model family from the generator (shared blind spots defeat the purpose)
+  but the harness does not enforce it.
+- `timeouts.reviewer_s`, `max_turns.reviewer` — session limits, same semantics as other roles.
+
+### Role mechanics
+
+- `VALID_ROLES` gains `reviewer`. Session dirs `logs/sessions/<seq:04d>-reviewer-<F###>/`; ledger
+  rows with `role:"reviewer"`; the budget gate, infra retry/backoff, and circuit breaker apply
+  unchanged. Doctor checks the reviewer's runner ONLY when `review.enabled` is true.
+- Prompt template `harness/prompts/reviewer.md` (string.Template). Injected: the feature JSON
+  block, the compiled contract's spec summary, and the attempt's diff
+  (`git -C app diff <last good tag, else good/BASELINE>`), truncated to at most 4000 lines with an
+  elision marker — the session may read `app/` directly for more context. The template instructs:
+  adversarial stance (actively hunt defects, spec violations, security holes), READ-ONLY (never
+  edit files — sole exceptions: the verdict file and append-only `decisions.md` lines per
+  section 7), verdict to `state/reviews/F###.json`.
+- **Read-only guard (deterministic):** the orchestrator snapshots `git -C app status --porcelain`
+  + diff hash before the review session; if the tree changed after it, the orchestrator resets
+  `app/` to the pre-review state, emits a `warning` event, and still uses the verdict.
+
+### Review verdict — `state/reviews/F###.json`
+
+```json
+{"feature_id":"F003","attempt":2,"verdict":"approve",
+ "findings":[{"severity":"major","file":"app/src/x.js","summary":"…"}],
+ "summary":"one-paragraph overall assessment"}
+```
+
+Rules: `severity` ∈ `blocker|major|minor`. `verdict:"reject"` is legal ONLY with ≥1
+`blocker`/`major` finding — minor-only reviews MUST approve (prevents infinite nitpick loops;
+minor findings ride along in the file and the run's git history). On reject, the orchestrator
+writes the findings to `state/feedback/F###.md` under `## adversarial review (attempt N)` — the
+same feedback path the Evaluator uses, so contract compilation (section 7) needs no changes.
+Invalid/missing verdict file → one corrective reviewer rerun (validation errors appended, mirror
+of the evaluator rule); if still invalid, emit `warning` and CONTINUE to boot+evaluation — review
+is a gate, not a load-bearing wall, and must never be able to wedge the main loop.
+
+### Observability amendments (folded into home sections on approval)
+
+- Section 2: role enum gains `reviewer`.
+- Section 5: closed event enum gains `review_verdict`; `review_verdict.data` =
+  `{verdict: "approve"|"reject", blockers: n, majors: n, minors: n}`.
+- Section 10: viewer renders `review_verdict` as a tick on the checks track (ok/fail by verdict);
+  reviewer sessions appear on the swimlane like any other role.
+- Section 9: doctor line for the reviewer runner when enabled.
+
+### Non-goals
+
+Multiple review rounds per attempt; reviewer↔generator dialogue (feedback flows only through the
+next attempt's contract); review of the Evaluator's outputs; enforcement of cross-family models.
+
 ## 8. Scripts contract (fixed templates; agents never edit scripts)
 
 All scripts: `#!/bin/bash`, `set -euo pipefail`, source `scripts/app.env` if it exists, no `setsid`
@@ -413,7 +488,8 @@ Boot sequence each iteration: `stop.sh` (cleanup) → `start.sh` → poll `healt
 
 Each check prints ✓/✗ + an actionable fix line: each configured runner's `doctor_checks()` pass
 (FATAL on failure or on an unknown runner name in config.json — for the `claude` runner this is
-CLI on PATH + `claude --version` captured); auth mode from the default runner's `auth_mode()`
+CLI on PATH + `claude --version` captured; the reviewer's runner is included only when
+`review.enabled`, section 7b); auth mode from the default runner's `auth_mode()`
 (claude heuristic: `ANTHROPIC_API_KEY` env set → `api_key`, else `subscription` — budgets switch
 per section 5); node + npm on PATH; `eval/node_modules/playwright` present + chromium installed
 (warn-only: "run scripts/bootstrap.sh"); git on PATH + identity resolvable in `app/` (warn if
@@ -467,8 +543,8 @@ per-feature progress bar, cumulative cost (labeled "through last completed sessi
 step sparkline, budget cap from `run_start.data.config`, staleness cell "last event Ns ago"
 (green <2m / amber <10m / red beyond); (2) Run Track — inline-SVG swimlane, 5 lanes
 (planner/generator/checks/evaluator/git), session blocks colored by stable feature-id hash, labels
-"F012·a2", markers (precheck ✓/✗ ticks, verdict diamonds, checkpoint/rollback flags, budget pin,
-stop marker), feature-tinted background bands, open block grows to a now-cursor; two fixed zoom
+"F012·a2", markers (precheck ✓/✗ ticks, review_verdict ✓/✗ ticks on the checks track,
+verdict diamonds, checkpoint/rollback flags, budget pin, stop marker), feature-tinted background bands, open block grows to a now-cursor; two fixed zoom
 buttons (full run / last hour), no drag-pan; incremental SVG mutation only (append blocks; per tick
 mutate only open-block width + cursor); (3) Right Now — current phase line from latest event; when a
 session is live, tail its transcript via `/api/session/<dir>/transcript.jsonl?offset` (dir from

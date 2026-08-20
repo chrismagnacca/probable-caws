@@ -28,7 +28,7 @@ FEATURE_ID_RE = re.compile(r"^F\d{3}$")
 APP_ENV_LINE_RE = re.compile(r"^[A-Z_]+=[^;&|<>$`]*$")
 
 VALID_STATUSES = {"todo", "building", "done", "failed", "blocked"}
-VALID_ROLES = {"planner", "generator", "evaluator"}
+VALID_ROLES = {"planner", "generator", "evaluator", "reviewer"}
 
 # Runner registry (CONTRACTS.md section 4b): adding a provider = new module + entry here
 # + a contract amendment. Every module exposes run_session/auth_mode/version/doctor_checks.
@@ -48,9 +48,9 @@ def resolve_runner_name(config: dict, role: str) -> str:
 EVENT_TYPES = {
     "run_start", "doctor_ok", "feature_selected", "contract_compiled", "session_start",
     "session_end", "session_retry", "precheck_pass", "precheck_fail", "app_boot_ok",
-    "app_boot_failed", "eval_verdict", "feature_done", "feature_failed", "feature_blocked",
-    "escalation", "git_branch", "git_checkpoint", "git_rollback", "budget_warn", "stop_condition_met",
-    "run_end", "warning", "error",
+    "app_boot_failed", "eval_verdict", "review_verdict", "feature_done", "feature_failed",
+    "feature_blocked", "escalation", "git_branch", "git_checkpoint", "git_rollback", "budget_warn",
+    "stop_condition_met", "run_end", "warning", "error",
 }
 
 STOP_REASONS = {
@@ -267,6 +267,71 @@ def parse_app_env(text: str) -> tuple:
         return False, errors
 
     return True, values
+
+
+REVIEW_SEVERITIES = {"blocker", "major", "minor"}
+
+
+def review_enabled(config: dict) -> bool:
+    """Master switch for the adversarial review stage (CONTRACTS.md section 7b)."""
+    return bool((config.get("review") or {}).get("enabled", False))
+
+
+def validate_review_verdict(doc: Any, feature_id: str, attempt: int) -> tuple:
+    """Semantic validation of `state/reviews/F###.json` (mirrors the evaluator verdict
+    rule, section 7b). Returns (ok: bool, errors: list[str]); never raises."""
+    errors: list = []
+
+    if not isinstance(doc, dict):
+        return False, ["review verdict must be a JSON object"]
+
+    if doc.get("feature_id") != feature_id:
+        errors.append(f"review verdict feature_id {doc.get('feature_id')!r} does not match {feature_id!r}")
+
+    verdict = doc.get("verdict")
+    if verdict not in ("approve", "reject"):
+        errors.append("review verdict field must be 'approve' or 'reject'")
+
+    findings = doc.get("findings", [])
+    if findings is None:
+        findings = []
+    if not isinstance(findings, list):
+        errors.append("review verdict 'findings' must be a list")
+        findings = []
+
+    valid_findings = []
+    for idx, finding in enumerate(findings):
+        if not isinstance(finding, dict):
+            errors.append(f"findings[{idx}] is not an object")
+            continue
+        severity = finding.get("severity")
+        if severity not in REVIEW_SEVERITIES:
+            errors.append(f"findings[{idx}] severity {severity!r} not in {sorted(REVIEW_SEVERITIES)}")
+            continue
+        summary = finding.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            errors.append(f"findings[{idx}] missing a non-empty 'summary'")
+            continue
+        valid_findings.append(finding)
+
+    if verdict == "reject" and not errors:
+        has_blocking = any(f.get("severity") in ("blocker", "major") for f in valid_findings)
+        if not has_blocking:
+            errors.append("verdict 'reject' requires at least one blocker/major finding (minor-only must approve)")
+
+    return (len(errors) == 0), errors
+
+
+def truncate_diff(text: str, max_lines: int = 4000) -> str:
+    """Truncate `text` to at most `max_lines` lines, appending an elision marker with the
+    count of remaining lines when truncation occurs."""
+    if not text:
+        return text
+    lines = text.splitlines()
+    if len(lines) <= max_lines:
+        return text
+    remaining = len(lines) - max_lines
+    return "\n".join(lines[:max_lines]) + f"\n[diff truncated: {remaining} more lines]"
 
 
 HANDOFF_BLOCK_RE = re.compile(r"^## session .*$", re.MULTILINE)
@@ -498,6 +563,31 @@ def git_is_dirty(repo) -> bool:
         return False
     result = subprocess.run(["git", "-C", str(repo), "status", "--porcelain"], capture_output=True, text=True)
     return bool(result.stdout.strip())
+
+
+def git_tree_snapshot(repo, env: Optional[dict] = None) -> Optional[str]:
+    """Stage everything and write a tree object, returning its SHA. Used as a
+    deterministic read-only guard around the reviewer session (section 7b): tolerant of
+    any failure (not a repo, git error) -> None."""
+    repo = Path(repo)
+    add = subprocess.run(["git", "-C", str(repo), "add", "-A"], capture_output=True, env=env)
+    if add.returncode != 0:
+        return None
+    write_tree = subprocess.run(["git", "-C", str(repo), "write-tree"], capture_output=True, text=True, env=env)
+    if write_tree.returncode != 0:
+        return None
+    sha = write_tree.stdout.strip()
+    return sha or None
+
+
+def git_restore_tree(repo, tree_sha: str, env: Optional[dict] = None) -> bool:
+    """Reset the working tree to `tree_sha` (as produced by git_tree_snapshot) and remove
+    anything not tracked by it. True iff every step succeeded."""
+    repo = Path(repo)
+    r1 = subprocess.run(["git", "-C", str(repo), "read-tree", tree_sha], capture_output=True, env=env)
+    r2 = subprocess.run(["git", "-C", str(repo), "checkout-index", "-af"], capture_output=True, env=env)
+    r3 = subprocess.run(["git", "-C", str(repo), "clean", "-fd"], capture_output=True, env=env)
+    return r1.returncode == 0 and r2.returncode == 0 and r3.returncode == 0
 
 
 # ---------------------------------------------------------------------------
@@ -1310,6 +1400,73 @@ class Orchestrator:
         )
         return result2, verdict2
 
+    # -- reviewer (adversarial review, CONTRACTS.md section 7b) -------------------------------------------------
+
+    def _reviewer_diff(self) -> str:
+        tag = git_last_good_tag(self.app_dir) or "good/BASELINE"
+        result = subprocess.run(["git", "-C", str(self.app_dir), "diff", tag], capture_output=True, text=True)
+        diff_text = result.stdout if result.returncode == 0 else ""
+        return truncate_diff(diff_text, 4000)
+
+    def _run_reviewer_once(self, feature, attempt, contract_text, review_path, model, max_turns, timeout_s):
+        template_path = self.root / "harness" / "prompts" / "reviewer.md"
+        prompt = self._render_prompt(template_path, {
+            "feature_id": feature["id"],
+            "attempt": str(attempt),
+            "feature_json": json.dumps(feature, indent=2),
+            "contract": contract_text,
+            "diff": self._reviewer_diff(),
+            "review_path": str(review_path.relative_to(self.root)),
+        })
+        result = self._run_with_infra_retry("reviewer", feature["id"], attempt, prompt, model, max_turns, timeout_s)
+        if not result.ok:
+            return result, None, []
+
+        doc = None
+        errors = ["review verdict file missing"]
+        if review_path.exists():
+            try:
+                with open(review_path, "r", encoding="utf-8") as f:
+                    doc = json.load(f)
+                errors = []
+            except Exception as exc:
+                doc = None
+                errors = [f"review verdict file unparseable: {exc}"]
+
+        if doc is not None:
+            ok, val_errors = validate_review_verdict(doc, feature["id"], attempt)
+            if not ok:
+                doc = None
+                errors = val_errors
+
+        return result, doc, errors
+
+    def _run_reviewer_with_correction(self, feature: dict, attempt: int, contract_text: str) -> tuple:
+        review_path = self.state_dir / "reviews" / f"{feature['id']}.json"
+        try:
+            review_path.unlink()
+        except FileNotFoundError:
+            pass
+
+        model = self.config["models"].get("reviewer") or self.config["models"].get("evaluator") or ""
+        timeout_s = self.config["timeouts"].get("reviewer_s") or self.config["timeouts"].get("evaluator_s")
+        max_turns = self.config["max_turns"].get("reviewer") or self.config["max_turns"].get("evaluator")
+
+        result, verdict, errors = self._run_reviewer_once(
+            feature, attempt, contract_text, review_path, model, max_turns, timeout_s,
+        )
+        if result is None or not result.ok or verdict is not None:
+            return result, verdict
+
+        correction_contract = contract_text + "\n\n" + _wrap_data(
+            "orchestrator/validation-errors",
+            "The previous reviewer session produced an invalid verdict:\n" + "\n".join(errors),
+        )
+        result2, verdict2, _errors2 = self._run_reviewer_once(
+            feature, attempt, correction_contract, review_path, model, max_turns, timeout_s,
+        )
+        return result2, verdict2
+
     def _prune_screenshots(self, feature_id: str) -> None:
         base = self.state_dir / "screenshots" / feature_id
         if not base.is_dir():
@@ -1375,6 +1532,63 @@ class Orchestrator:
         write_atomic(self.state_dir / "feedback" / f"{feature_id}.md", reason)
         self._emit_event("feature_failed", feature_id=feature_id, attempt=attempt, data={"reason": reason})
 
+    def _write_review_feedback(self, feature_id: str, attempt: int, verdict: dict) -> None:
+        lines = [f"## adversarial review (attempt {attempt})", ""]
+        for finding in verdict.get("findings") or []:
+            severity = finding.get("severity")
+            file_ = finding.get("file")
+            summary = finding.get("summary", "")
+            prefix = f"{file_}: " if file_ else ""
+            lines.append(f"- [{severity}] {prefix}{summary}")
+        summary_text = verdict.get("summary")
+        if summary_text:
+            lines += ["", summary_text]
+        write_atomic(self.state_dir / "feedback" / f"{feature_id}.md", "\n".join(lines) + "\n")
+
+    def _run_review_stage(self, feature: dict, features_doc: dict, attempt: int, contract_text: str, original_status: str) -> bool:
+        """The adversarial review stage (CONTRACTS.md section 7b), run between precheck
+        and app boot when `review.enabled`. Returns True when the caller should proceed
+        to boot+evaluation, False when the attempt has already been terminated (a
+        `_fail_or_retry` call has already handled it)."""
+        feature_id = feature["id"]
+
+        tree_before = git_tree_snapshot(self.app_dir)
+        result, verdict = self._run_reviewer_with_correction(feature, attempt, contract_text)
+        tree_after = git_tree_snapshot(self.app_dir)
+        if tree_before is not None and tree_after is not None and tree_before != tree_after:
+            git_restore_tree(self.app_dir, tree_before)
+            self._emit_event("warning", feature_id=feature_id, attempt=attempt,
+                              data={"reason": "reviewer modified app/; changes reverted"})
+
+        if result is None or not result.ok:
+            self._fail_or_retry(feature, features_doc,
+                                 f"reviewer infra failure: {getattr(result, 'exit_reason', 'no_result')}",
+                                 True, original_status)
+            return False
+
+        if verdict is None:
+            self._emit_event("warning", feature_id=feature_id, attempt=attempt, data={
+                "reason": "reviewer could not produce a valid verdict; continuing to evaluation"})
+            return True
+
+        findings = verdict.get("findings") or []
+        counts = {"blocker": 0, "major": 0, "minor": 0}
+        for finding in findings:
+            severity = finding.get("severity")
+            if severity in counts:
+                counts[severity] += 1
+        self._emit_event("review_verdict", feature_id=feature_id, attempt=attempt, data={
+            "verdict": verdict.get("verdict"),
+            "blockers": counts["blocker"], "majors": counts["major"], "minors": counts["minor"],
+        })
+
+        if verdict.get("verdict") == "reject":
+            self._write_review_feedback(feature_id, attempt, verdict)
+            self._fail_or_retry(feature, features_doc, "adversarial review rejected the attempt", False, original_status)
+            return False
+
+        return True
+
     # -- per-feature iteration -------------------------------------------------
 
     def _run_feature_attempt(self, feature: dict, features_doc: dict) -> None:
@@ -1421,6 +1635,10 @@ class Orchestrator:
             if not precheck_ok:
                 self._fail_or_retry(feature, features_doc, f"precheck failed:\n{precheck_tail}", False, original_status)
                 return
+
+            if review_enabled(self.config):
+                if not self._run_review_stage(feature, features_doc, attempt, contract_text, original_status):
+                    return
 
             boot_ok, boot_tail = self._boot_app()
             self._emit_event("app_boot_ok" if boot_ok else "app_boot_failed",

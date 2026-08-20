@@ -160,14 +160,18 @@ screenshots for each attempt.
 | --- | --- |
 | `prompt_file` | Path to the human's app request. |
 | `models.planner` / `.generator` / `.evaluator` | Model per role. |
+| `models.reviewer` | Model for the optional Reviewer role (see *Adversarial review* below). |
+| `review.enabled` | Turn on the adversarial review stage between precheck and app boot. Default `false`. |
 | `budget.max_usd` / `.max_tokens` / `.warn_fraction` | Spend cap (USD for API-key auth, tokens for subscription auth) and the fraction at which a warning is emitted. |
 | `attempts.max_per_feature` | Retries per feature before it's marked `failed`. |
 | `attempts.max_consecutive_infra_failures` | Circuit breaker: consecutive infra failures (timeouts, crashes) before halting. |
 | `attempts.max_api_retries` / `.backoff_base_s` | Backoff retry count/base for infra failures (`backoff_base_s * 4^k`). |
 | `timeouts.planner_s` / `.generator_s` / `.evaluator_s` / `.precheck_s` | Wall-clock timeout per session type. |
+| `timeouts.reviewer_s` | Wall-clock timeout for the Reviewer session (only used when `review.enabled` is `true`). |
 | `timeouts.boot_s` / `.first_boot_s` / `.boot_poll_interval_s` | App boot polling: normal, first-ever boot (no `good/F###` tag yet), and poll interval. |
 | `timeouts.kill_grace_s` | Grace period between `SIGTERM` and `SIGKILL` on session timeout. |
 | `max_turns.planner` / `.generator` / `.evaluator` | Max agent turns per session. |
+| `max_turns.reviewer` | Max agent turns for the Reviewer session. |
 | `run.max_wall_hours` / `.max_iterations` | Overall run limits. |
 | `planner_bounds.min_features` / `.max_features` / `.min_criteria` / `.max_criteria` | Backlog shape constraints validated on the Planner's output. |
 | `handoff.max_blocks` | How many recent Generator handoff blocks are kept/injected into contracts. |
@@ -207,6 +211,41 @@ Things to know when using a non-claude runner:
   containment — see *Security limits* below.
 - `python3 -m harness doctor` preflights whichever runners your config selects (missing CLI or an
   unknown runner name is fatal before any session spends a token).
+
+## Adversarial review (optional)
+
+A fourth role, **Reviewer**, is available but off by default. Where the Evaluator is black-box
+(drives the running app, never reads source), the Reviewer is the inverse: **white-box** — it
+reads the Generator's diff and the surrounding code, never touches the running app, and looks for
+reasons to reject rather than rubber-stamping the work. When enabled, it runs after `check.sh`
+(precheck) and before the app boots, so a rejection short-circuits the attempt before the harness
+ever spends time booting and evaluating code the reviewer would have failed anyway.
+
+Enable it in `config.json`:
+
+```json
+"review": {"enabled": true},
+"models": {"reviewer": "claude-opus-5"}
+```
+
+On **reject**, it's a content failure like any other: the attempt is consumed, the reviewer's
+findings become the next Generator attempt's feedback, and boot + evaluation are skipped for that
+attempt. On **approve**, the iteration proceeds exactly as it does today. A reject is only legal
+when the reviewer reports at least one `blocker` or `major` finding — a review that found nothing
+but minor nitpicks (style, naming, small cleanups) **must** approve, so nitpicking alone can never
+trap a feature in a retry loop.
+
+The review is a gate, not a load-bearing wall: if the reviewer's session fails to produce a valid
+verdict file even after one corrective rerun, the harness logs a warning and continues straight to
+boot + evaluation rather than getting stuck.
+
+Because the Reviewer is meant to catch what the Generator missed, it's most useful running a
+**different model family** than the Generator — shared blind spots between the two defeat the
+purpose (the harness doesn't enforce this, it's just the recommended setup):
+
+```json
+"runner": {"generator": "claude", "reviewer": "codex"}
+```
 
 ## Design, in brief
 

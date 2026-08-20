@@ -129,7 +129,7 @@
   .panel-body{padding:var(--sp-3);}
 
   /* Run track */
-  #run-track-svg{display:block; width:100%; height:240px; background:var(--surface-0);}
+  #run-track-svg{display:block; width:100%; height:280px; background:var(--surface-0);}
   .rt-lane-a{fill:var(--lane-a);}
   .rt-lane-b{fill:var(--lane-b);}
   .rt-lane-label{font-family:var(--mono); font-size:10px; fill:var(--text-2);}
@@ -336,7 +336,7 @@
             <button id="zoom-hour">last hour</button>
           </span>
         </div>
-        <svg id="run-track-svg" viewBox="0 0 1600 240" preserveAspectRatio="none"></svg>
+        <svg id="run-track-svg" viewBox="0 0 1600 280" preserveAspectRatio="none"></svg>
       </div>
 
       <div class="panel">
@@ -387,9 +387,9 @@
 "use strict";
 
 const SVGNS = "http://www.w3.org/2000/svg";
-const LANES = ["planner","generator","checks","evaluator","git"];
+const LANES = ["planner","generator","checks","reviewer","evaluator","git"];
 const LANE_H = 36, LANE_GAP = 4, TOP_PAD = 20, LEFT_PAD = 56, RIGHT_PAD = 10;
-const SVG_H = TOP_PAD*2 + LANES.length*(LANE_H+LANE_GAP); // 240, matches CSS height
+const SVG_H = TOP_PAD*2 + LANES.length*(LANE_H+LANE_GAP); // 280, matches CSS height
 let SVG_W = 1600; // recomputed from clientWidth on every rebuild so 1 unit == 1 CSS px
 const BADGE_GLYPH = { done:"✓", failed:"✕", building:"▶", blocked:"⧗", todo:"" };
 const MARKER_LABELS = { "tick-ok":"pass", "tick-fail":"fail", "diamond":"verdict", "flag-ok":"checkpoint", "flag-fail":"rollback" };
@@ -706,6 +706,11 @@ function dispatch(row){
     }
     case "precheck_pass": trackAddMarker(row, "checks", "tick-ok"); break;
     case "precheck_fail": trackAddMarker(row, "checks", "tick-fail"); break;
+    case "review_verdict": {
+      const rv = ((row.data && row.data.verdict) === "approve") ? "tick-ok" : "tick-fail";
+      trackAddMarker(row, "checks", rv);
+      break;
+    }
     case "app_boot_ok": trackAddMarker(row, "checks", "tick-ok"); break;
     case "app_boot_failed": trackAddMarker(row, "checks", "tick-fail"); break;
     case "eval_verdict": {

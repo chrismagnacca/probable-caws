@@ -3,7 +3,11 @@
   "models": {
     "planner": "claude-opus-5",
     "generator": "claude-sonnet-5",
-    "evaluator": "claude-sonnet-5"
+    "evaluator": "claude-sonnet-5",
+    "reviewer": "claude-sonnet-5"
+  },
+  "review": {
+    "enabled": false
   },
   "budget": {
     "max_usd": 50.0,
@@ -20,6 +24,7 @@
     "planner_s": 900,
     "generator_s": 2400,
     "evaluator_s": 1200,
+    "reviewer_s": 1200,
     "precheck_s": 600,
     "boot_s": 120,
     "first_boot_s": 420,
@@ -29,7 +34,8 @@
   "max_turns": {
     "planner": 40,
     "generator": 150,
-    "evaluator": 80
+    "evaluator": 80,
+    "reviewer": 80
   },
   "run": {
     "max_wall_hours": 8,
