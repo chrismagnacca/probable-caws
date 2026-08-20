@@ -3,8 +3,8 @@ via `python3 -m harness doctor`.
 
 Each check returns a `CheckResult(name, ok, warn, message)`. `message` always includes an
 actionable fix when `ok` is False. `run()` aborts (returns False) only when a *hard*
-failure occurs — a check where `warn=False` and `ok=False` (in practice: the `claude` CLI
-missing, or `config.json` unreadable/invalid). Everything else (node/npm, playwright,
+failure occurs — a check where `warn=False` and `ok=False` (in practice: a configured
+runner's CLI missing, an unknown runner name, or `config.json` unreadable/invalid). Everything else (node/npm, playwright,
 git identity, port conflicts, disk space, workspace writability) is advisory: printed as
 a warning but never blocks `run`.
 """
@@ -69,32 +69,49 @@ def _safe_int(text: str) -> Optional[int]:
 # ---------------------------------------------------------------------------
 
 
-def check_claude_cli() -> CheckResult:
-    path = shutil.which("claude")
-    if not path:
-        return CheckResult(
-            "claude_cli", False, False,
-            "claude CLI not found on PATH — fix: install Claude Code and ensure `claude` is on PATH",
-        )
+def _configured_runners(root: Path) -> list:
+    """[(runner_name, module_or_None)] for every distinct runner config.json selects.
+    Unreadable config -> the default `claude` runner (check_config reports the config error)."""
+    from . import orchestrator  # local import: doctor must stay importable standalone
     try:
-        proc = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=10)
-        version = (proc.stdout or proc.stderr or "").strip()
-        if proc.returncode != 0:
-            return CheckResult(
-                "claude_cli", False, False,
-                f"`claude --version` exited {proc.returncode} — fix: reinstall Claude Code ({version})",
-            )
-        return CheckResult("claude_cli", True, False, f"claude CLI found: {version or path}")
-    except Exception as exc:
-        return CheckResult(
-            "claude_cli", False, False,
-            f"`claude --version` errored: {exc} — fix: reinstall Claude Code",
-        )
+        config = orchestrator.load_config(root)
+    except Exception:
+        config = {}
+    out = []
+    for role in ("planner", "generator", "evaluator"):
+        name = orchestrator.resolve_runner_name(config, role)
+        if name not in [n for n, _ in out]:
+            out.append((name, orchestrator.RUNNERS.get(name)))
+    return out
 
 
-def check_auth_mode() -> CheckResult:
-    mode = detect_auth_mode()
-    return CheckResult("auth_mode", True, False, f"auth mode: {mode}")
+def check_runners(root: Path) -> list:
+    """One CheckResult per runner-provided check; unknown runner name is FATAL."""
+    results = []
+    for name, module in _configured_runners(root):
+        if module is None:
+            from . import orchestrator
+            results.append(CheckResult(
+                f"runner:{name}", False, False,
+                f"unknown runner {name!r} in config.json — fix: use one of {sorted(orchestrator.RUNNERS)}",
+            ))
+            continue
+        for check_name, ok, message in module.doctor_checks():
+            text = message if ok else f"fix: {message}"
+            results.append(CheckResult(f"runner:{name}:{check_name}", ok, False, text))
+    return results
+
+
+def check_auth_mode(root: Path) -> CheckResult:
+    from . import orchestrator
+    try:
+        config = orchestrator.load_config(root)
+    except Exception:
+        config = {}
+    name = orchestrator.resolve_runner_name(config, "default")
+    module = orchestrator.RUNNERS.get(name)
+    mode = module.auth_mode() if module else detect_auth_mode()
+    return CheckResult("auth_mode", True, False, f"auth mode ({name}): {mode}")
 
 
 def check_node_npm() -> CheckResult:
@@ -197,7 +214,7 @@ def check_config(root: Path) -> CheckResult:
 
 
 ALL_CHECKS = (
-    check_claude_cli,
+    check_runners,
     check_auth_mode,
     check_node_npm,
     check_playwright,
@@ -209,16 +226,18 @@ ALL_CHECKS = (
 )
 
 # Checks that take only `root` (vs. no args) — used by run() to dispatch uniformly.
-_ROOT_CHECKS = {check_playwright, check_git, check_ports, check_disk, check_workspace_writable, check_config}
+_ROOT_CHECKS = {check_runners, check_auth_mode, check_playwright, check_git, check_ports,
+                check_disk, check_workspace_writable, check_config}
 
 
 def run_checks(root: Path) -> list:
     results = []
     for check_fn in ALL_CHECKS:
-        if check_fn in _ROOT_CHECKS:
-            results.append(check_fn(root))
+        outcome = check_fn(root) if check_fn in _ROOT_CHECKS else check_fn()
+        if isinstance(outcome, list):
+            results.extend(outcome)
         else:
-            results.append(check_fn())
+            results.append(outcome)
     return results
 
 

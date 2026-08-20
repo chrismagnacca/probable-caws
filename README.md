@@ -173,6 +173,7 @@ screenshots for each attempt.
 | `handoff.max_blocks` | How many recent Generator handoff blocks are kept/injected into contracts. |
 | `screenshots.keep_attempts` | How many recent attempts' screenshots are retained per feature. |
 | `viewer.port` | Default port for `serve`. |
+| `runner.default` / `.planner` / `.generator` / `.evaluator` | (Optional) Which agent runtime fills each role. Only `claude` is registered today; absent means all-`claude`. The seam for other providers is spec'd in `docs/CONTRACTS.md` §4b. |
 
 ## Design, in brief
 

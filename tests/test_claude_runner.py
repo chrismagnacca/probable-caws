@@ -190,5 +190,23 @@ class BuildCommandTests(unittest.TestCase):
         self.assertIn("acceptEdits", cmd)
 
 
+class RunnerInterfaceTests(unittest.TestCase):
+    def test_auth_mode_follows_api_key_env(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test"}):
+            self.assertEqual(claude_runner.auth_mode(), "api_key")
+        env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertEqual(claude_runner.auth_mode(), "subscription")
+
+    def test_doctor_checks_shape(self):
+        for name, ok, message in claude_runner.doctor_checks():
+            self.assertIsInstance(name, str)
+            self.assertIsInstance(ok, bool)
+            self.assertIsInstance(message, str)
+            self.assertTrue(message)
+
+
 if __name__ == "__main__":
     unittest.main()

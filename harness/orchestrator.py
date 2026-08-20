@@ -30,6 +30,16 @@ APP_ENV_LINE_RE = re.compile(r"^[A-Z_]+=[^;&|<>$`]*$")
 VALID_STATUSES = {"todo", "building", "done", "failed", "blocked"}
 VALID_ROLES = {"planner", "generator", "evaluator"}
 
+# Runner registry (CONTRACTS.md section 4b): adding a provider = new module + entry here
+# + a contract amendment. Every module exposes run_session/auth_mode/version/doctor_checks.
+RUNNERS = {"claude": claude_runner}
+
+
+def resolve_runner_name(config: dict, role: str) -> str:
+    """Per-role override wins over `runner.default`; absent block -> "claude"."""
+    block = config.get("runner") or {}
+    return block.get(role) or block.get("default") or "claude"
+
 EVENT_TYPES = {
     "run_start", "doctor_ok", "feature_selected", "contract_compiled", "session_start",
     "session_end", "session_retry", "precheck_pass", "precheck_fail", "app_boot_ok",
@@ -592,7 +602,16 @@ class Orchestrator:
         self.lock_path = self.state_dir / ".tmp" / "orchestrator.lock"
 
         self.run_id = _new_run_id()
-        self.auth_mode = _detect_auth_mode()
+
+        self._runners = {}
+        for role in sorted(VALID_ROLES) + ["default"]:
+            name = resolve_runner_name(self.config, role)
+            if name not in RUNNERS:
+                raise ValueError(
+                    f"unknown runner {name!r} for role {role!r} in config.json (known: {sorted(RUNNERS)})")
+            self._runners[role] = RUNNERS[name]
+        # Budget unit follows the DEFAULT runner's auth mode (section 4b)
+        self.auth_mode = self._runners["default"].auth_mode()
 
         self._started_at: Optional[float] = None
         self._stop_reason: Optional[str] = None
@@ -846,7 +865,7 @@ class Orchestrator:
         self._emit_event("session_start", role=role, feature_id=feature_id, attempt=attempt,
                           data={"session_dir": session_dir.name, "model": model})
 
-        result = claude_runner.run_session(
+        result = self._runners[role].run_session(
             role=role, feature_id=feature_id, prompt_text=prompt_text, model=model,
             max_turns=max_turns, timeout_s=timeout_s, session_dir=session_dir,
             workspace_root=self.root, kill_grace_s=self.config["timeouts"]["kill_grace_s"],
@@ -893,9 +912,14 @@ class Orchestrator:
 
     def _emit_run_start(self) -> None:
         prompt_text = self._read_text(self.root / self.config.get("prompt_file", "PROMPT.md"))
+        versions = {}
+        for role in sorted(VALID_ROLES):
+            name = resolve_runner_name(self.config, role)
+            versions.setdefault(name, RUNNERS[name].version())
         self._emit_event("run_start", data={
             "config": self.config,
-            "claude_version": self._get_claude_version(),
+            "claude_version": versions.get("claude", self._get_claude_version()),
+            "runners": versions,
             "auth_mode": self.auth_mode,
             "prompt": prompt_text,
         })
@@ -1424,7 +1448,3 @@ class Orchestrator:
         finally:
             self._commit_state_repo_iteration(feature_id, attempt)
             self._write_run_status(phase="feature", feature_id=feature_id, attempt=attempt)
-
-
-def _detect_auth_mode() -> str:
-    return "api_key" if os.environ.get("ANTHROPIC_API_KEY") else "subscription"

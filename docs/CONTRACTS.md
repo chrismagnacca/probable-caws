@@ -140,6 +140,84 @@ claude -p --verbose --output-format stream-json --model <model> --max-turns <n> 
   two `assistant` lines, one `result` line as above); `test_claude_runner.py` feeds it through the
   parser and asserts every SessionResult field.
 
+## 4b. Runner seam — provider abstraction (STATUS: IMPLEMENTED; `claude` is the only registered runner)
+
+The only shipped runner is `claude` (`claude_runner.py`); section 4 is that runner's conformance
+instance of this contract. This seam lets another agent runtime (Codex CLI, Gemini CLI, aider, …)
+fill any role without touching the orchestrator loop, the event/ledger schemas, `state/`, or the
+viewer.
+
+**A runner wraps an agentic CLI, not a completions API.** Whatever fills a role must be able to
+(Generator) edit files under `app/` and run shell commands, and (Evaluator) drive the running app
+via browser/HTTP — a bare chat API cannot satisfy the role prompts in section 11.
+
+### Interface (one module per provider)
+
+A runner is a Python module registered in `RUNNERS = {"claude": claude_runner, ...}` (orchestrator
+constant; adding a provider = new module + registry entry + a contract amendment here). It exposes:
+
+- `run_session(role, feature_id, prompt_text, model, max_turns, timeout_s, session_dir,
+  workspace_root, kill_grace_s, extra_env=None) -> SessionResult` — signature and `SessionResult`
+  dataclass exactly as section 4. `SessionResult` is the canonical currency between any runner and
+  the orchestrator; no runner-specific fields may be added to it.
+- `auth_mode() -> "api_key" | "subscription"` — drives the section-5 budget unit.
+- `version() -> str` — human-readable runtime version for doctor and `run_start`.
+- `doctor_checks() -> list[(name: str, ok: bool, fix: str)]` — provider-specific preflight
+  (CLI on PATH, credentials present, sandbox/permission policy in place).
+
+### Obligations (what the orchestrator relies on; every runner MUST honor)
+
+1. Write the assembled prompt byte-for-byte to `<session_dir>/prompt.md` BEFORE launch, and tee
+   the provider's raw output verbatim to `<session_dir>/transcript.jsonl` (line-oriented; JSONL
+   preferred but not required — the viewer renders unrecognized lines as raw text).
+2. Spawn in its own process group (`start_new_session=True`); on timeout `SIGTERM` the group, wait
+   `kill_grace_s`, then `SIGKILL`; map every outcome onto the closed enum
+   `exit_reason ∈ ok|timeout|error|killed|no_result` with section-4 semantics — the orchestrator's
+   infra-vs-content classification, backoff, and circuit breaker read ONLY `ok`/`exit_reason` and
+   must work unchanged.
+3. Populate cost/token fields honestly: unknown cost → `cost_usd = 0.0`, unreported tokens → `0`,
+   `session_id` non-empty (fallback: the session dir name). A runner whose `auth_mode()` is
+   `api_key` but which cannot report cost makes the USD budget gate ineffective —
+   `doctor_checks()` MUST surface that as a failing check.
+4. Write nothing outside `<session_dir>`; the *agent it launches* may edit only what the role
+   prompts direct (`app/`, `state/handoff.md`, etc.) under a provider-side permission policy
+   equivalent in intent to `.claude/settings.json` (section 12). No policy → doctor warning.
+5. `model` strings are opaque: passed through verbatim, recorded verbatim in the ledger.
+
+### Selection (config)
+
+`config.json` supports an optional block (absent → everything uses `claude`, zero behavior change):
+
+```json
+"runner": {"default": "claude", "planner": "claude", "generator": "claude", "evaluator": "claude"}
+```
+
+Per-role override wins over `default`; unknown runner name → doctor fail, exit 1.
+Budget unit follows the DEFAULT runner's `auth_mode()`; mixed-provider budget conversion is a
+non-goal (runs mixing a USD-reporting and a token-only runner get a doctor warning).
+
+### Observability invariance
+
+`events.jsonl` (closed enum, section 5), `ledger.jsonl`, `logs/sessions/` layout, `state/`
+schemas, and the viewer contract (section 10) are runner-agnostic and MUST NOT grow
+provider-specific fields. The only runner-related surface: `run_start.data` carries
+`runners: {"<name>": "<version()>"}` (while keeping `claude_version` for viewer compat), and the
+doctor CLI check (section 9) is "each configured runner's `doctor_checks()` pass; unknown runner
+name in config.json → FATAL".
+
+### Acceptance for a new runner
+
+A runner ships only with: (a) a hand-authored raw-output fixture under `tests/fixtures/` and a
+parser test asserting every `SessionResult` field (mirror of `test_claude_runner.py`); (b) passing
+`doctor_checks()` on a configured machine; (c) a demonstrated Generator session that edits `app/`
+and an Evaluator session that drives a browser; (d) the registry entry and an amendment to this
+section recording the provider's failure-classification mapping.
+
+### Non-goals
+
+Mid-session provider failover; mixed-provider budget conversion; wrapping raw completions APIs;
+per-feature (rather than per-role) runner selection.
+
 ## 5. Observability files
 
 `logs/events.jsonl` — append + flush + fsync per line. Row:
@@ -154,8 +232,9 @@ session_end session_retry precheck_pass precheck_fail app_boot_ok app_boot_faile
 feature_done feature_failed feature_blocked escalation git_branch git_checkpoint git_rollback
 budget_warn stop_condition_met run_end warning error`.
 Required `data` payloads:
-- `run_start.data` = `{config: <full config echo>, claude_version, auth_mode: "api_key"|"subscription",
-  prompt: <PROMPT.md text>}` (viewer depends on this).
+- `run_start.data` = `{config: <full config echo>, claude_version, runners: {"<name>": "<version>"},
+  auth_mode: "api_key"|"subscription", prompt: <PROMPT.md text>}` (viewer depends on
+  `claude_version`; `runners` is the runner-seam version map, section 4b).
 - `session_start.data` = `{session_dir: "0007-generator-F003", model}` (viewer depends on this).
 - `session_end.data` = `{exit_reason, wall_s, cost_usd}`.
 - `run_end.data` = `{stop_reason: <enum>, human: "<one sentence>", done: n, failed: n, blocked: n}`.
@@ -294,8 +373,10 @@ Boot sequence each iteration: `stop.sh` (cleanup) → `start.sh` → poll `healt
 
 ## 9. Doctor checks (`doctor.py`; auto-run at `run` start)
 
-Each check prints ✓/✗ + an actionable fix line: claude CLI on PATH + `claude --version` captured;
-auth mode (heuristic: `ANTHROPIC_API_KEY` env set → `api_key`, else `subscription` — budgets switch
+Each check prints ✓/✗ + an actionable fix line: each configured runner's `doctor_checks()` pass
+(FATAL on failure or on an unknown runner name in config.json — for the `claude` runner this is
+CLI on PATH + `claude --version` captured); auth mode from the default runner's `auth_mode()`
+(claude heuristic: `ANTHROPIC_API_KEY` env set → `api_key`, else `subscription` — budgets switch
 per section 5); node + npm on PATH; `eval/node_modules/playwright` present + chromium installed
 (warn-only: "run scripts/bootstrap.sh"); git on PATH + identity resolvable in `app/` (warn if
 bootstrap not yet run); `APP_PORT`/`API_PORT`/8787 currently free (warn); disk ≥ 2GB free; workspace

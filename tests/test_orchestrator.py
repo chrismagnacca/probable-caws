@@ -499,5 +499,41 @@ class RunBranchDecisionTests(unittest.TestCase):
         self.assertIsNone(orch.run_branch_decision("feature-x", "R1"))
 
 
+class RunnerSeamTests(unittest.TestCase):
+    def test_absent_block_defaults_to_claude(self):
+        for role in ("planner", "generator", "evaluator", "default"):
+            self.assertEqual(orch.resolve_runner_name({}, role), "claude")
+
+    def test_default_override_applies_to_all_roles(self):
+        cfg = {"runner": {"default": "codex"}}
+        self.assertEqual(orch.resolve_runner_name(cfg, "planner"), "codex")
+        self.assertEqual(orch.resolve_runner_name(cfg, "evaluator"), "codex")
+
+    def test_per_role_override_wins(self):
+        cfg = {"runner": {"default": "codex", "evaluator": "claude"}}
+        self.assertEqual(orch.resolve_runner_name(cfg, "evaluator"), "claude")
+        self.assertEqual(orch.resolve_runner_name(cfg, "generator"), "codex")
+
+    def test_registry_modules_expose_full_interface(self):
+        self.assertIn("claude", orch.RUNNERS)
+        for module in orch.RUNNERS.values():
+            for fn in ("run_session", "auth_mode", "version", "doctor_checks"):
+                self.assertTrue(callable(getattr(module, fn)), f"runner missing {fn}")
+
+    def test_unknown_runner_rejected_at_construction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):
+                orch.Orchestrator(tmp, config={"runner": {"default": "nope"}})
+
+    def test_unknown_runner_is_fatal_in_doctor(self):
+        from harness import doctor
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "config.json").write_text(
+                json.dumps({"runner": {"generator": "nope"}}), encoding="utf-8")
+            results = doctor.check_runners(Path(tmp))
+            fatal = [c for c in results if not c.ok and not c.warn and "nope" in c.message]
+            self.assertEqual(len(fatal), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ import dataclasses
 import json
 import os
 import select
+import shutil
 import signal
 import subprocess
 import time
@@ -294,3 +295,32 @@ def run_session(
         returncode=proc.returncode,
         forced_exit_reason=forced_reason,
     )
+
+
+# ---------------------------------------------------------------------------
+# Runner interface (CONTRACTS.md section 4b) — every runner module exposes
+# run_session, auth_mode, version, doctor_checks
+# ---------------------------------------------------------------------------
+
+
+def auth_mode() -> str:
+    """ANTHROPIC_API_KEY set -> USD-budgeted API billing, else subscription (token budget)."""
+    return "api_key" if os.environ.get("ANTHROPIC_API_KEY") else "subscription"
+
+
+def version() -> str:
+    try:
+        proc = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=10)
+        return (proc.stdout or proc.stderr or "").strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def doctor_checks() -> list:
+    """[(name, ok, message-or-fix)] — claude CLI present and answering --version."""
+    if not shutil.which("claude"):
+        return [("claude_cli", False, "install Claude Code and ensure `claude` is on PATH")]
+    v = version()
+    if v == "unknown":
+        return [("claude_cli", False, "`claude --version` failed — reinstall Claude Code")]
+    return [("claude_cli", True, f"claude CLI found: {v}")]
