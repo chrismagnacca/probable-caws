@@ -1,0 +1,4 @@
+{"type":"message","session_id":"km-19ab3c","message":{"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"app/index.js\"}"}}]}}
+{"type":"message","message":{"role":"tool","tool_call_id":"call_1","content":"ok"}}
+not json garbage line
+{"type":"message","message":{"role":"assistant","content":"Feature implemented; handoff written."},"usage":{"prompt_tokens":9300,"completion_tokens":380,"cached_tokens":0}}

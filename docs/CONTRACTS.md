@@ -31,7 +31,11 @@ README.md                       # user guide
 harness/
   __init__.py  __main__.py      # CLI dispatch
   orchestrator.py               # main loop
-  claude_runner.py              # claude -p spawn/parse/kill (ALL CLI coupling lives here)
+  runner_common.py              # SessionResult + shared spawn/tee/kill machinery (section 4b)
+  claude_runner.py              # claude -p command assembly + stream-json mapping (section 4)
+  codex_runner.py               # codex exec --json mapping (section 4b)
+  gemini_runner.py              # gemini stream-json mapping (section 4b)
+  kimi_runner.py                # kimi print-mode stream-json mapping (section 4b)
   doctor.py                     # preflight checks
   serve.py                      # web viewer server
   static/viewer.html            # single self-contained cockpit page
@@ -100,7 +104,7 @@ Exit code: always 0 on a clean halt (the machine-readable reason lives in the `r
 A PID lockfile `state/.tmp/orchestrator.lock` (containing the PID, checked with `os.kill(pid, 0)`)
 prevents two orchestrators; stale locks are replaced silently.
 
-## 4. `claude -p` invocation & parsing (ALL of this lives in `claude_runner.py`)
+## 4. `claude -p` invocation & parsing (ALL claude coupling lives in `claude_runner.py`; the shared SessionResult/spawn/tee/kill machinery lives in `runner_common.py` and is re-exported — see 4b)
 
 Command (assembled prompt piped via stdin):
 
@@ -140,12 +144,15 @@ claude -p --verbose --output-format stream-json --model <model> --max-turns <n> 
   two `assistant` lines, one `result` line as above); `test_claude_runner.py` feeds it through the
   parser and asserts every SessionResult field.
 
-## 4b. Runner seam — provider abstraction (STATUS: IMPLEMENTED; `claude` is the only registered runner)
+## 4b. Runner seam — provider abstraction (STATUS: IMPLEMENTED; registered: claude, codex, gemini, kimi)
 
-The only shipped runner is `claude` (`claude_runner.py`); section 4 is that runner's conformance
-instance of this contract. This seam lets another agent runtime (Codex CLI, Gemini CLI, aider, …)
-fill any role without touching the orchestrator loop, the event/ledger schemas, `state/`, or the
-viewer.
+Section 4 is the `claude` runner's conformance instance of this contract. This seam lets another
+agent runtime fill any role without touching the orchestrator loop, the event/ledger schemas,
+`state/`, or the viewer. The provider-neutral machinery — the `SessionResult` dataclass,
+`INFRA_EXIT_REASONS`/`is_infra_failure`, `backoff_delay_s`, tolerant JSONL `parse_line`, and the
+shared spawn/tee/timeout-kill loop `capture_session` — lives in `harness/runner_common.py`;
+`claude_runner.py` re-exports those names for compatibility, and every runner module contains only
+its command assembly + event-schema mapping.
 
 **A runner wraps an agentic CLI, not a completions API.** Whatever fills a role must be able to
 (Generator) edit files under `app/` and run shell commands, and (Evaluator) drive the running app
@@ -212,6 +219,37 @@ parser test asserting every `SessionResult` field (mirror of `test_claude_runner
 `doctor_checks()` on a configured machine; (c) a demonstrated Generator session that edits `app/`
 and an Evaluator session that drives a browser; (d) the registry entry and an amendment to this
 section recording the provider's failure-classification mapping.
+
+### Registered runners (failure-classification mappings + verification status)
+
+- **`codex`** (`codex_runner.py`) — `codex exec --json --ephemeral --skip-git-repo-check
+  --sandbox workspace-write [-m <model>] -`, prompt via stdin. session_id ←
+  `thread.started.thread_id`; final_text ← last `item.completed` with
+  `item.type == "agent_message"`; tokens ← last `turn.completed.usage` (`input_tokens` includes the
+  cached portion; `cached_input_tokens` → cache_read, `cache_write_input_tokens` → cache_creation);
+  num_turns = count of `turn.completed`. Infra mapping: `error`/`turn.failed` event → `error`;
+  no `turn.completed` → `no_result`. No USD reporting → `auth_mode()` = `subscription` always;
+  `max_turns` has no equivalent and is ignored (timeout is the backstop). VERIFIED live against
+  codex-cli 0.146.0: ok-path (session id, tokens, final text) and error-path (invalid model →
+  `turn.failed` → `error`) both exercised end-to-end through `run_session`.
+- **`gemini`** (`gemini_runner.py`) — `gemini --output-format stream-json [-m <model>] --yolo`,
+  prompt via stdin (headless mode). session_id ← `init.session_id`; final_text ← last non-delta
+  assistant `message` (falls back to concatenated `delta:true` chunks); tokens/cost ←
+  `result.stats` (`total_cost_usd` recorded when present but `auth_mode()` = `subscription` —
+  budgets must not depend on it). Infra mapping: no `result` event → `no_result`; `result.status`
+  other than success → `error`. `max_turns` ignored. AUTHORED FROM DOCS, UNVERIFIED: the CLI is not
+  installed on the dev machine; `tests/fixtures/gemini_stream_sample.jsonl` is the conformance
+  target until a live session is demonstrated.
+- **`kimi`** (`kimi_runner.py`) — `kimi -p <prompt> --output-format stream-json [-m <model>]
+  --auto`; the prompt travels as an argument (stdin = /dev/null). Print mode emits
+  OpenAI-chat-style JSONL with no terminal result event: success = clean exit + ≥1 assistant
+  message (its content = final_text); tokens ← any event's `usage`
+  (`prompt_tokens`/`completion_tokens` or `input_tokens`/`output_tokens`); `auth_mode()` =
+  `subscription`; if kimi reports no usage, the token budget cannot bind on a kimi-only run —
+  `doctor_checks()` carries that advisory. `max_turns` ignored. AUTHORED FROM DOCS, PARTIALLY
+  VERIFIED: CLI 0.31.1 present but unauthenticated on the dev machine;
+  `tests/fixtures/kimi_stream_sample.jsonl` is the conformance target until a live session is
+  demonstrated.
 
 ### Non-goals
 

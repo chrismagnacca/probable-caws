@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"01a01ff6-4b65-7b11-bc38-95a9bd38cb9f"}
+{"type":"turn.started"}
+not json garbage line
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"ls"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Feature implemented; handoff written."}}
+{"type":"turn.completed","usage":{"input_tokens":14091,"cached_input_tokens":9984,"cache_write_input_tokens":120,"output_tokens":5,"reasoning_output_tokens":0}}

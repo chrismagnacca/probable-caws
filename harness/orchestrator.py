@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import claude_runner
+from . import claude_runner, codex_runner, gemini_runner, kimi_runner
 
 # ---------------------------------------------------------------------------
 # Naming & enums (CONTRACTS.md section 2)
@@ -32,7 +32,12 @@ VALID_ROLES = {"planner", "generator", "evaluator"}
 
 # Runner registry (CONTRACTS.md section 4b): adding a provider = new module + entry here
 # + a contract amendment. Every module exposes run_session/auth_mode/version/doctor_checks.
-RUNNERS = {"claude": claude_runner}
+RUNNERS = {
+    "claude": claude_runner,
+    "codex": codex_runner,
+    "gemini": gemini_runner,
+    "kimi": kimi_runner,
+}
 
 
 def resolve_runner_name(config: dict, role: str) -> str:
