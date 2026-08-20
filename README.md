@@ -3,7 +3,8 @@
 A harness for long-running, unattended agentic coding. You write a few sentences describing an
 app; a **Planner** agent turns that into a spec and a feature backlog; then, one feature at a
 time, a **Generator** agent implements it and an **Evaluator** agent black-box tests it through the
-running app's UI — pass, and the harness commits + tags the code and moves on; fail, and the
+running app's UI (an optional white-box **Reviewer** can adversarially gate attempts in between) —
+pass, and the harness commits + tags the code and moves on; fail, and the
 Generator gets another attempt with the Evaluator's feedback. The loop runs unattended for hours,
 with every decision, cost, and screenshot recorded to disk so you can watch it live or reconstruct
 exactly what happened afterward.
@@ -69,6 +70,10 @@ PROMPT.md ──────────────▶│   Planner   ──▶
                          │              ▼                                │
                          │      check.sh (install + lint/test)           │
                          │              │                                │
+                         │              ▼                                │
+                         │  [Reviewer, if review.enabled — white-box;    │
+                         │   reject → feedback, attempt over, no boot]   │
+                         │              │ approve / disabled             │
                          │              ▼                                │
                          │   stop.sh → start.sh → poll healthcheck.sh    │
                          │              │                                │
@@ -146,7 +151,9 @@ Everything the harness and its agents did is on disk, in order:
 5. `logs/sessions/<seq>-<role>-<F###>/transcript.jsonl` — that session's full raw output.
 6. `state/verdicts/F###.json` + `state/feedback/F###.md` + `state/screenshots/F###/attemptN/` —
    what the Evaluator checked, why it passed or failed, and the visual evidence.
-7. `state/decisions.md` / `state/handoff.md` — the durable facts and notes agents left for each
+7. `state/reviews/F###.json` — the adversarial review's verdict and findings, when the optional
+   Reviewer is enabled (a rejection also lands in `state/feedback/F###.md`).
+8. `state/decisions.md` / `state/handoff.md` — the durable facts and notes agents left for each
    other.
 
 The viewer (`python3 -m harness serve`) replays this same trail as a live cockpit: a vitals strip,
@@ -237,7 +244,9 @@ trap a feature in a retry loop.
 
 The review is a gate, not a load-bearing wall: if the reviewer's session fails to produce a valid
 verdict file even after one corrective rerun, the harness logs a warning and continues straight to
-boot + evaluation rather than getting stuck.
+boot + evaluation rather than getting stuck. And it's read-only by enforcement, not trust — the
+orchestrator snapshots the `app/` tree around the review session and reverts anything the
+reviewer changed, so a review can never smuggle code edits into the attempt it's judging.
 
 Because the Reviewer is meant to catch what the Generator missed, it's most useful running a
 **different model family** than the Generator — shared blind spots between the two defeat the
